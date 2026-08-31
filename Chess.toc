@@ -1,0 +1,15 @@
+## Interface: 30300
+## Title: |cffffffffC|r|cffffffffh|r|cffffffffe|r|cffffffffs|r|cffffffffs|r|cff00ff00 |r|cff00ff00W|r|cff00ff00o|r|cff00ff00W|r
+## Title-esES: |cFFFFD700Ajedrez|r WoW
+## Title-esMX: |cFFFFD700Ajedrez|r WoW
+## Notes: Play chess against the AI or challenge another player
+## Notes-esES: Juega ajedrez contra la IA o reta a otro jugador
+## Notes-esMX: Juega ajedrez contra la IA o reta a otro jugador
+## Author: Nidhaus
+## Version: 5.0
+## SavedVariables: ChessDB
+
+Locale.enUS.lua
+Locale.esES.lua
+Chess.lua
+Minimap.lua

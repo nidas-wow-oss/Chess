@@ -1,0 +1,172 @@
+-- ============================================================
+-- Locale.esES.lua  -  Spanish translation (esES / esMX)
+-- Only overrides the base English strings when the WoW client
+-- is running in Spanish. Otherwise this file does nothing.
+-- ============================================================
+
+local loc = GetLocale()
+if loc ~= "esES" and loc ~= "esMX" then return end
+
+local L = ChessLocale
+if not L then return end
+
+-- ---- Generico ----------------------------------------------
+L["TITLE"]            = "Ajedrez WoW"
+
+-- ---- Tablero / estado --------------------------------------
+L["NO_ACTIVE_GAME"]   = "Sin partida activa"
+L["CHOOSE_MODE"]      = "Elige un modo de juego"
+L["WHITE"]            = "Blancas"
+L["BLACK"]            = "Negras"
+L["TURN"]             = "Turno: %s"
+L["YOUR_TURN"]        = "Tu turno"
+L["OPP_TURN"]         = "Turno del oponente"
+L["AI_THINKING"]      = "IA (%s) pensando..."
+L["CHECK"]            = "\194\161JAQUE!"
+L["CHECKMATE"]        = "\194\161%s ganan!\n\194\161Jaque Mate!"
+L["STALEMATE"]        = "\194\161Tablas!"
+L["TIME"]             = "Tiempo: %s"
+L["TIME_NONE"]        = "Tiempo: --:--"
+
+-- ---- Dificultad --------------------------------------------
+L["DIFF_TITLE"]       = "Dificultad de IA:"
+L["DIFF_NOVICE"]      = "Novato"
+L["DIFF_EASY"]        = "F\195\161cil"
+L["DIFF_NORMAL"]      = "Normal"
+L["DIFF_HARD"]        = "Dif\195\173cil"
+L["DIFF_EXPERT"]      = "Experto"
+L["DIFF_NOVICE_DESC"] = "Mueve al azar"
+L["DIFF_EASY_DESC"]   = "Captura si puede"
+L["DIFF_NORMAL_DESC"] = "Eval\195\186a el tablero"
+L["DIFF_HARD_DESC"]   = "Minimax 2 jugadas"
+L["DIFF_EXPERT_DESC"] = "Minimax 3 jugadas + quiescence"
+L["DIFF_DEPTH"]       = "Profundidad: %d jugadas"
+
+-- ---- Botones del panel -------------------------------------
+L["BTN_NEW_WHITE"]    = "Nueva (Blancas) vs IA"
+L["BTN_NEW_BLACK"]    = "Nueva (Negras) vs IA"
+L["BTN_CHALLENGE"]    = "Retar objetivo"
+L["BTN_RESTART"]      = "Reiniciar partida"
+L["BTN_RESIGN"]       = "Rendirse"
+L["BTN_ABANDON"]      = "Abandonar partida"
+L["BTN_HISTORY"]      = "Historial"
+
+-- ---- Pesta\195\177as ---------------------------------------
+L["TAB_EMPTY"]        = "Vac\195\173a"
+L["TAB_VS_AI"]        = "vs IA"
+L["TAB_NEW_TT"]       = "Abrir una segunda partida"
+L["TAB_CLOSE_TT"]     = "Cerrar esta pesta\195\177a"
+
+-- ---- Oponente / mate / deshacer ----------------------------
+L["VS_PLAYER"]        = "vs %s"
+L["MATE_YOU"]         = "Puedes dar mate en %d"
+L["MATE_OPP"]         = "El rival da mate en %d"
+L["MATE_NONE"]        = ""
+L["BTN_UNDO"]         = "Deshacer jugada"
+L["N_MOVE_UNDONE"]    = "Jugada deshecha."
+L["N_NO_UNDO"]        = "Nada que deshacer."
+
+-- ---- Checkbox de Escape ------------------------------------
+L["ESC_CLOSE"]        = "Cerrar con Escape"
+L["ESC_TOOLTIP"]      = "Permite abrir y cerrar el tablero con la tecla Escape."
+
+-- ---- Reinicio consensuado (PvP) ----------------------------
+L["N_RESTART_REQ_SENT"] = "Solicitud de reinicio enviada a %s."
+L["POPUP_RESTART_TITLE"]= "-=[ Solicitud de Reinicio ]=-"
+L["POPUP_RESTART_MSG"]  = "|cFF00CCFF%s|r quiere\nreiniciar la partida"
+L["N_RESTART_DECLINED"] = "%s rechaz\195\179 el reinicio."
+L["N_RESTART_AGREED"]   = "\194\161Reinicio acordado! Nueva partida."
+
+-- ---- Revancha ----------------------------------------------
+L["POPUP_REMATCH_TITLE"]= "-=[ Fin de la Partida ]=-"
+L["POPUP_REMATCH_MSG"]  = "\194\191Jugar otra vs |cFF00CCFF%s|r?"
+L["POPUP_YES"]          = "S\195\173"
+L["POPUP_NO"]           = "No"
+
+-- ---- Alerta de movimiento ----------------------------------
+L["N_YOUR_TURN_ALERT"]  = "Tu turno - %s movi\195\179."
+
+-- ---- Auto-minimizar en arena -------------------------------
+L["ARENA_MINIMIZE"]   = "Auto-minimizar en arena"
+L["ARENA_TOOLTIP"]    = "Oculta el tablero autom\195\161ticamente al entrar en una arena."
+
+-- ---- Leyenda -----------------------------------------------
+L["LEGEND"]           = "|cFF00FF00>> Selecci\195\179n  |cFF3355FFMov. libre|r\n|cFFFF3322Captura/Jaque  |cFFCCCC00\195\154lt. mov.|r"
+
+-- ---- Notificaciones (en la ventana del addon, no en el chat) --
+L["N_SELECT_PLAYER"]  = "Selecciona un jugador primero."
+L["N_NO_SELF"]        = "No puedes retarte a ti mismo."
+L["N_CHALLENGE_SENT"] = "Reto enviado a %s."
+L["N_CHALLENGE_RECV"] = "%s te reta a una partida de ajedrez."
+L["N_DECLINED_BY"]    = "%s rechaz\195\179 el reto."
+L["N_ACCEPTED_BY"]    = "%s acept\195\179. \194\161Juegas con Blancas!"
+L["N_YOU_ACCEPTED"]   = "Aceptaste. Juegas con Negras vs %s."
+L["N_YOU_DECLINED"]   = "Rechazaste el reto de %s."
+L["N_EXPIRED"]        = "El reto de %s expir\195\179."
+L["N_NO_PENDING"]     = "No hay ning\195\186n reto pendiente."
+L["N_NO_ACTIVE"]      = "No hay partida activa."
+L["N_RESTARTED"]      = "Partida reiniciada."
+L["N_OPP_RESTARTED"]  = "%s reinici\195\179 la partida."
+L["N_RESIGNED"]       = "Te has rendido."
+L["N_OPP_RESIGNED"]   = "%s se rindi\195\179. \194\161Ganaste!"
+L["N_ABANDONED"]      = "Partida abandonada."
+L["N_YOU_WIN"]        = "\194\161Ganaste!"
+L["N_YOU_LOSE"]       = "Perdiste."
+L["N_BUSY_TWO_GAMES"] = "Ya tienes dos partidas en curso."
+L["N_NEW_AI"]         = "Nueva partida vs IA (%s). Juegas con %s."
+L["N_DIFF_SET"]       = "Dificultad: %s"
+L["N_DIFF_RANGE"]     = "Usa dif 1-5."
+L["N_RESUME_OTHER"]   = "Tu otra partida espera en la otra pesta\195\177a."
+L["N_OPP_MOVED"]      = "%s movi\195\179 en tu otra partida."
+L["N_GAME_LOADED"]    = "Partida anterior restaurada. Escribe /chess para continuar."
+L["N_UNKNOWN_CMD"]    = "Comando desconocido. Escribe /chess help"
+
+-- ---- Ventana de reto ---------------------------------------
+L["POPUP_TITLE"]      = "-=[ Reto de Ajedrez ]=-"
+L["POPUP_ACCEPT"]     = "Aceptar"
+L["POPUP_DECLINE"]    = "Declinar"
+L["POPUP_EXPIRES"]    = "Expira en %d seg"
+L["POPUP_MSG"]        = "|cFF00CCFF%s|r\nte reta a una partida de ajedrez"
+L["POPUP_BUSY"]       = "|cFF00CCFF%s|r te reta a ajedrez\n|cFFFF4444Ya tienes dos partidas activas.|r\nTermina una para aceptar."
+
+-- ---- Ventana de historial ----------------------------------
+L["HIST_TITLE"]       = "Historial de Partidas"
+L["HIST_STATS"]       = "|cFF00FF00Victorias: %d|r    |cFFFF4444Derrotas: %d|r    |cFFAAAAAAEmpates: %d|r\n|cFFFFD700Tiempo total jugado: %s|r"
+L["HDR_NUM"]          = "#"
+L["HDR_RESULT"]       = "Resultado"
+L["HDR_DATE"]         = "Fecha"
+L["HDR_OPP"]          = "Rival/Dific."
+L["HDR_COLOR"]        = "Color"
+L["HDR_MODE"]         = "Modo"
+L["HDR_TIME"]         = "Tiempo"
+L["HIST_CLEAR"]       = "Borrar historial"
+L["HIST_CLEARED"]     = "Historial borrado."
+L["HIST_EMPTY"]       = "Sin partidas registradas a\195\186n."
+L["HIST_WIN"]         = "Victoria"
+L["HIST_LOSS"]        = "Derrota"
+L["HIST_DRAW"]        = "Empate"
+L["HIST_VS_AI"]       = "vs IA"
+L["HIST_PVP"]         = "PvP"
+L["HIST_AI_OPP"]      = "IA - %s"
+
+-- ---- Bot\195\179n del minimapa -----------------------------
+L["MM_TITLE"]         = "Ajedrez WoW"
+L["MM_LEFT"]          = "|cFFFFFFFFClic izquierdo:|r Abrir/cerrar tablero"
+L["MM_RIGHT"]         = "|cFFFFFFFFClic derecho:|r Abrir tablero"
+L["MM_DRAG"]          = "|cFFFFFFFFArrastrar:|r Mover bot\195\179n"
+L["MM_IN_GAME"]       = "Partida en curso: %s"
+L["MM_YOUR_TURN"]     = "Tu turno"
+L["MM_OPP_TURN"]      = "Turno del oponente"
+L["MM_NO_GAME"]       = "Sin partida activa"
+
+-- ---- /chess help (lo \195\186nico que se imprime en el chat) --
+L["HELP_HEADER"]      = "====== Ajedrez WoW - Comandos ======"
+L["HELP_OPEN"]        = "/chess          - Abrir/cerrar tablero"
+L["HELP_ACCEPT"]      = "/chess accept   - Aceptar un reto"
+L["HELP_DECLINE"]     = "/chess decline  - Rechazar un reto"
+L["HELP_RESIGN"]      = "/chess resign   - Rendirse"
+L["HELP_RESTART"]     = "/chess restart  - Reiniciar la partida"
+L["HELP_HISTORY"]     = "/chess history  - Ver el historial"
+L["HELP_DIFF"]        = "/chess dif 1-5  - Cambiar dificultad de IA"
+L["HELP_TAB"]         = "/chess tab 1-5  - Cambiar o abrir pesta\195\177a"
+L["HELP_FOOTER"]      = "===================================="

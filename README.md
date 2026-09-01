@@ -1,99 +1,110 @@
-# ♟ Ajedrez WoW — Addon para WotLK 3.3.5a
+*[Leer en español](README.es.md)*
 
-Juega ajedrez completo dentro de World of Warcraft, contra la IA o contra otro jugador real del mismo servidor.
+# ♟ Chess for WoW — WotLK 3.3.5a addon
+
+Play a full game of chess inside World of Warcraft, against the AI or against another real player on the same realm.
+
+**Version:** 5.0 · **Author:** Nidhaus
 
 ---
 
-## 📦 Instalación
+## 📦 Installation
 
-1. Copia la carpeta `Chess` completa dentro de:
+1. Copy the whole `Chess` folder into:
    ```
    World of Warcraft/Interface/AddOns/Chess/
    ```
-2. La estructura debe quedar así:
-   ```
-   Chess/
-   ├── Chess.toc
-   └── Chess.lua
-   ```
-3. Entra al juego y activa el addon en el selector de addons de la pantalla de personajes.
+2. Enable the addon on the character selection screen.
 
 ---
 
-## 🎮 Comandos
+## 🎮 Commands
 
-| Comando | Descripción |
+| Command | Description |
 |---|---|
-| `/chess` o `/ajedrez` | Abrir/cerrar el tablero |
-| `/chess accept` | Aceptar un reto recibido |
-| `/chess decline` | Rechazar un reto |
-| `/chess resign` | Rendirse en la partida actual |
-| `/chess help` | Mostrar ayuda |
+| `/chess` or `/ajedrez` | Open or close the board |
+| `/chess accept` | Accept an incoming challenge |
+| `/chess decline` | Decline a challenge |
+| `/chess resign` | Resign the current game |
+| `/chess help` | Show help |
 
 ---
 
-## 🕹 Cómo jugar
+## 🕹 How to play
 
-### Contra la IA
-1. Abre el tablero con `/chess`
-2. Pulsa **"Nueva (Blancas) vs IA"** o **"Nueva (Negras) vs IA"**
-3. Haz clic en tu pieza para seleccionarla (se resalta en verde)
-4. Los movimientos válidos se muestran en azul (libre) o rojo (captura)
-5. Haz clic en el destino para mover
+### Against the AI
 
-### Contra otro jugador
-1. Selecciona a otro jugador como **objetivo** (`/target NombreJugador`)
-2. Abre el tablero y pulsa **"Retar objetivo"**
-3. El oponente recibirá una notificación en el chat
-4. El oponente escribe `/chess accept` para aceptar
-5. Quien retó juega con **Blancas**, quien acepta con **Negras**
-6. Los movimientos se sincronizan automáticamente
+1. Open the board with `/chess`.
+2. Press **"New (White) vs AI"** or **"New (Black) vs AI"**.
+3. Click one of your pieces to select it — it highlights in green.
+4. Legal moves appear in blue (empty square) or red (capture).
+5. Click the destination square to move.
+
+### Against another player
+
+1. Target the other player (`/target PlayerName`).
+2. Open the board and press **"Challenge target"**.
+3. They get a notification in chat.
+4. They type `/chess accept`.
+5. Whoever challenged plays **White**, whoever accepted plays **Black**.
+6. Moves sync automatically between both clients.
 
 ---
 
-## ♟ Piezas (abreviaciones en español)
+## ♟ Piece letters
 
-| Símbolo | Pieza |
+The board uses Spanish piece abbreviations:
+
+| Letter | Piece |
 |---|---|
-| R | Rey (King) |
-| D | Dama / Reina (Queen) |
-| T | Torre (Rook) |
-| A | Alfil (Bishop) |
-| C | Caballo (Knight) |
-| P | Peón (Pawn) |
+| R | Rey — King |
+| D | Dama — Queen |
+| T | Torre — Rook |
+| A | Alfil — Bishop |
+| C | Caballo — Knight |
+| P | Peón — Pawn |
 
-- **Dorado** = Piezas Blancas
-- **Rojo** = Piezas Negras
+- **Gold** = White pieces
+- **Red** = Black pieces
 
 ---
 
-## 🟩 Colores del tablero
+## 🟩 Board colours
 
-| Color | Significado |
+| Colour | Meaning |
 |---|---|
-| 🟩 Verde | Pieza seleccionada |
-| 🟦 Azul | Movimiento libre disponible |
-| 🟥 Rojo | Captura disponible / Rey en jaque |
-| 🟨 Amarillo | Último movimiento realizado |
+| 🟩 Green | Selected piece |
+| 🟦 Blue | Legal move available |
+| 🟥 Red | Capture available / king in check |
+| 🟨 Yellow | Last move played |
 
 ---
 
-## ⚙️ Características
+## ⚙️ Features
 
-- ✅ Todas las reglas del ajedrez implementadas
-- ✅ Enroque corto y largo
-- ✅ Captura al paso (en passant)
-- ✅ Promoción automática a Reina
-- ✅ Detección de Jaque y Jaque Mate
-- ✅ Detección de Tablas (ahogado)
-- ✅ IA con estrategia greedy + variedad aleatoria
-- ✅ Multijugador via mensajes de addon (mismo servidor)
-- ✅ Tablero movible arrastrando con clic izquierdo
+- ✅ Complete chess ruleset
+- ✅ Castling, kingside and queenside
+- ✅ En passant
+- ✅ Automatic promotion to queen
+- ✅ Check and checkmate detection
+- ✅ Stalemate detection
+- ✅ AI with a greedy strategy plus randomised variety
+- ✅ Multiplayer over addon messages (same realm)
+- ✅ Board movable by left-click dragging
+- ✅ English and Spanish locales included
 
 ---
 
-## 🐛 Notas
+## 🐛 Notes
 
-- Ambos jugadores deben tener el addon instalado y activo para el modo multijugador.
-- Los mensajes de addon usan el canal WHISPER — no spam al chat general.
-- Compatible con servidores WotLK 3.3.5a (privados y oficial clásico equivalente).
+- Both players need the addon installed and enabled for multiplayer.
+- Addon messages use the WHISPER channel — nothing is spammed to public chat.
+- Compatible with WotLK 3.3.5a realms.
+
+## Compatibility
+
+Interface 30300 — WotLK 3.3.5a. Tested on Warmane.
+
+## License
+
+Free to use. If you redistribute it or build on it, keep the credit to the author.

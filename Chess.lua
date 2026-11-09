@@ -113,6 +113,7 @@ local pendingChallenge  = nil
 local outgoingChallenge = nil
 
 -- UI references
+local BoardFrame
 local ChessFrame, SquareBtns, TurnLabel, OppLabel, StatusLabel, TimerLabel, MateLabel, NoticeLabel
 local DiffBtns  = {}
 local TabWidgets = {}
@@ -133,332 +134,623 @@ end
 
 -- ============================================================
 -- CHESS LOGIC
+-- Motor rapido: tablas de consulta en vez de string:sub, ataques
+-- detectados mirando desde la casilla (sin generar las jugadas del
+-- rival) y hacer/deshacer sobre un solo tablero durante la busqueda.
+-- La busqueda no crea tablas por nodo: menos basura, menos tirones del GC.
 -- ============================================================
-local function col(p) return p and p:sub(1,1) or nil end
-local function typ(p) return p and p:sub(2)   or nil end
+local PCOL, PTYP, PNAME = {}, {}, { w={}, b={} }
+for _,cl in ipairs({"w","b"}) do
+    for _,t in ipairs({"P","N","B","R","Q","K"}) do
+        local p=cl..t; PCOL[p]=cl; PTYP[p]=t; PNAME[cl][t]=p
+    end
+end
+
+-- leer t[nil] devuelve nil en Lua 5.1, asi que no hace falta chequear p
+local function col(p) return PCOL[p] end
+local function typ(p) return PTYP[p] end
 local function opp(c) return c=="w" and "b" or "w" end
 local function inb(r,c) return r>=1 and r<=8 and c>=1 and c<=8 end
 
 local function copyBoard(b)
     local n={}
-    for r=1,8 do n[r]={} for c=1,8 do n[r][c]=b[r][c] end end
+    for r=1,8 do local s=b[r]; local d={}; n[r]=d; for c=1,8 do d[c]=s[c] end end
     return n
 end
 
-local function rawMoves(board,r,c,ep,cas)
-    local piece=board[r][c]; if not piece then return {} end
-    local cl=col(piece); local pt=typ(piece); local mv={}
-    local function tryAdd(tr,tc)
-        if not inb(tr,tc) then return end
-        local t=board[tr][tc]
-        if not t or col(t)~=cl then table.insert(mv,{fr=r,fc=c,tr=tr,tc=tc}) end
+local KN_DR={2,2,-2,-2,1,1,-1,-1}; local KN_DC={1,-1,1,-1,2,-2,2,-2}
+local KG_DR={1,1,1,0,0,-1,-1,-1};  local KG_DC={1,0,-1,1,-1,1,0,-1}
+local DG_DR={1,1,-1,-1};           local DG_DC={1,-1,1,-1}
+local OR_DR={1,-1,0,0};            local OR_DC={0,0,1,-1}
+
+-- True si la casilla (r,c) esta atacada por el color 'by'.
+local function attacked(b,r,c,by)
+    local N=PNAME[by]
+    -- un peon blanco ataca hacia arriba: se para una fila por debajo
+    local pr=(by=="w") and r-1 or r+1
+    if pr>=1 and pr<=8 then
+        local row=b[pr]; local P=N.P
+        if c>1 and row[c-1]==P then return true end
+        if c<8 and row[c+1]==P then return true end
     end
-    local function slide(dr,dc)
-        local tr,tc=r+dr,c+dc
-        while inb(tr,tc) do
-            local t=board[tr][tc]
-            if t then if col(t)~=cl then table.insert(mv,{fr=r,fc=c,tr=tr,tc=tc}) end break end
-            table.insert(mv,{fr=r,fc=c,tr=tr,tc=tc}); tr,tc=tr+dr,tc+dc
-        end
+    local Kn,Kg=N.N,N.K
+    for i=1,8 do
+        local tr,tc=r+KN_DR[i],c+KN_DC[i]
+        if tr>=1 and tr<=8 and tc>=1 and tc<=8 and b[tr][tc]==Kn then return true end
     end
-    if pt=="P" then
-        local d=cl=="w" and 1 or -1; local st=cl=="w" and 2 or 7
-        if inb(r+d,c) and not board[r+d][c] then
-            table.insert(mv,{fr=r,fc=c,tr=r+d,tc=c})
-            if r==st and not board[r+2*d][c] then
-                table.insert(mv,{fr=r,fc=c,tr=r+2*d,tc=c,sp="dp"}) end
-        end
-        for _,dc in ipairs({-1,1}) do
-            if inb(r+d,c+dc) then
-                local t=board[r+d][c+dc]
-                if t and col(t)~=cl then table.insert(mv,{fr=r,fc=c,tr=r+d,tc=c+dc})
-                elseif ep and ep[1]==r+d and ep[2]==c+dc then
-                    table.insert(mv,{fr=r,fc=c,tr=r+d,tc=c+dc,sp="ep"}) end
-            end
-        end
-    elseif pt=="N" then
-        for _,d in ipairs({{2,1},{2,-1},{-2,1},{-2,-1},{1,2},{1,-2},{-1,2},{-1,-2}}) do
-            tryAdd(r+d[1],c+d[2]) end
-    elseif pt=="B" then slide(1,1) slide(1,-1) slide(-1,1) slide(-1,-1)
-    elseif pt=="R" then slide(1,0) slide(-1,0) slide(0,1) slide(0,-1)
-    elseif pt=="Q" then
-        slide(1,1) slide(1,-1) slide(-1,1) slide(-1,-1)
-        slide(1,0) slide(-1,0) slide(0,1) slide(0,-1)
-    elseif pt=="K" then
-        for dr=-1,1 do for dc=-1,1 do
-            if dr~=0 or dc~=0 then tryAdd(r+dr,c+dc) end end end
-        local br=cl=="w" and 1 or 8
-        if r==br and c==5 and cas then
-            if cas[cl.."K"] and cas[cl.."Rh"] and board[br][8]==cl.."R"
-               and not board[br][6] and not board[br][7] then
-                table.insert(mv,{fr=r,fc=c,tr=br,tc=7,sp="cK"}) end
-            if cas[cl.."K"] and cas[cl.."Ra"] and board[br][1]==cl.."R"
-               and not board[br][4] and not board[br][3] and not board[br][2] then
-                table.insert(mv,{fr=r,fc=c,tr=br,tc=3,sp="cQ"}) end
+    for i=1,8 do
+        local tr,tc=r+KG_DR[i],c+KG_DC[i]
+        if tr>=1 and tr<=8 and tc>=1 and tc<=8 and b[tr][tc]==Kg then return true end
+    end
+    local B,R,Q=N.B,N.R,N.Q
+    for i=1,4 do
+        local dr,dc=DG_DR[i],DG_DC[i]; local tr,tc=r+dr,c+dc
+        while tr>=1 and tr<=8 and tc>=1 and tc<=8 do
+            local p=b[tr][tc]
+            if p then if p==B or p==Q then return true end break end
+            tr,tc=tr+dr,tc+dc
         end
     end
-    return mv
+    for i=1,4 do
+        local dr,dc=OR_DR[i],OR_DC[i]; local tr,tc=r+dr,c+dc
+        while tr>=1 and tr<=8 and tc>=1 and tc<=8 do
+            local p=b[tr][tc]
+            if p then if p==R or p==Q then return true end break end
+            tr,tc=tr+dr,tc+dc
+        end
+    end
+    return false
 end
 
-local noCas={wK=false,wRa=false,wRh=false,bK=false,bRa=false,bRh=false}
+-- ---- Enroque como mascara de bits (no crea tablas en la busqueda) ----
+local CAS_WK, CAS_WQ, CAS_BK, CAS_BQ = 1,2,4,8
+local function hasBit(x,f) return x%(f+f)>=f end
+local function casToMask(cas)
+    if not cas then return 0 end
+    local m=0
+    if cas.wK and cas.wRh then m=m+CAS_WK end
+    if cas.wK and cas.wRa then m=m+CAS_WQ end
+    if cas.bK and cas.bRh then m=m+CAS_BK end
+    if cas.bK and cas.bRa then m=m+CAS_BQ end
+    return m
+end
+-- casilla (indice 1..64) -> derechos que se pierden si algo sale o llega ahi
+local CAS_NEXT={}
+do
+    local clear={ [5]=CAS_WK+CAS_WQ, [8]=CAS_WK, [1]=CAS_WQ,
+                  [61]=CAS_BK+CAS_BQ, [64]=CAS_BK, [57]=CAS_BQ }
+    for sq,bits in pairs(clear) do
+        local t={}
+        for x=0,15 do
+            local y=x
+            for _,f in ipairs({1,2,4,8}) do
+                if hasBit(bits,f) and hasBit(y,f) then y=y-f end
+            end
+            t[x]=y
+        end
+        CAS_NEXT[sq]=t
+    end
+end
+local function casAfter(cas,m)
+    if cas==0 then return 0 end
+    local t=CAS_NEXT[(m.fr-1)*8+m.fc]; if t then cas=t[cas] end
+    t=CAS_NEXT[(m.tr-1)*8+m.tc]; if t then cas=t[cas] end
+    return cas
+end
+-- al paso como indice de casilla (0 = ninguno)
+local function epAfter(m)
+    if m.sp=="dp" then return ((m.fr+m.tr)/2-1)*8+m.fc end
+    return 0
+end
+local function epToSq(ep)
+    if ep and ep[1] and ep[2] then return (ep[1]-1)*8+ep[2] end
+    return 0
+end
 
+-- ---- Generacion de jugadas sobre un buffer reutilizable ----
+local function addMove(list,n,fr,fc,tr,tc,sp,promo)
+    n=n+1
+    local m=list[n]
+    if not m then m={}; list[n]=m end
+    m.fr=fr; m.fc=fc; m.tr=tr; m.tc=tc; m.sp=sp; m.promo=promo; m.score=0
+    return n
+end
+
+local function slideGen(b,list,n,r,c,cl,DR,DC,capsOnly)
+    for i=1,4 do
+        local dr,dc=DR[i],DC[i]; local tr,tc=r+dr,c+dc
+        while tr>=1 and tr<=8 and tc>=1 and tc<=8 do
+            local t=b[tr][tc]
+            if t then
+                if PCOL[t]~=cl then n=addMove(list,n,r,c,tr,tc) end
+                break
+            end
+            if not capsOnly then n=addMove(list,n,r,c,tr,tc) end
+            tr,tc=tr+dr,tc+dc
+        end
+    end
+    return n
+end
+
+-- Jugadas pseudo-legales de 'cl'. capsOnly = solo capturas y coronaciones.
+-- La coronacion se genera a dama; la eleccion del jugador se aplica aparte.
+local function genPseudo(b,cl,epSq,cas,list,capsOnly)
+    local n=0
+    local N=PNAME[cl]; local Q=N.Q
+    local d=(cl=="w") and 1 or -1
+    local startR=(cl=="w") and 2 or 7
+    local lastR=(cl=="w") and 8 or 1
+    for r=1,8 do
+        local row=b[r]
+        for c=1,8 do
+            local p=row[c]
+            if p and PCOL[p]==cl then
+                local t=PTYP[p]
+                if t=="P" then
+                    local tr=r+d
+                    if tr>=1 and tr<=8 then
+                        if not b[tr][c] then
+                            if tr==lastR then n=addMove(list,n,r,c,tr,c,nil,Q)
+                            elseif not capsOnly then
+                                n=addMove(list,n,r,c,tr,c)
+                                if r==startR and not b[tr+d][c] then n=addMove(list,n,r,c,tr+d,c,"dp") end
+                            end
+                        end
+                        for dc=-1,1,2 do
+                            local tc=c+dc
+                            if tc>=1 and tc<=8 then
+                                local t2=b[tr][tc]
+                                if t2 then
+                                    if PCOL[t2]~=cl then n=addMove(list,n,r,c,tr,tc,nil,(tr==lastR) and Q or nil) end
+                                elseif epSq==(tr-1)*8+tc then
+                                    n=addMove(list,n,r,c,tr,tc,"ep")
+                                end
+                            end
+                        end
+                    end
+                elseif t=="N" or t=="K" then
+                    local DR,DC=KN_DR,KN_DC
+                    if t=="K" then DR,DC=KG_DR,KG_DC end
+                    for i=1,8 do
+                        local tr,tc=r+DR[i],c+DC[i]
+                        if tr>=1 and tr<=8 and tc>=1 and tc<=8 then
+                            local t2=b[tr][tc]
+                            if t2 then
+                                if PCOL[t2]~=cl then n=addMove(list,n,r,c,tr,tc) end
+                            elseif not capsOnly then n=addMove(list,n,r,c,tr,tc) end
+                        end
+                    end
+                    if t=="K" and not capsOnly and cas>0 then
+                        local br=(cl=="w") and 1 or 8
+                        if r==br and c==5 then
+                            local kf=(cl=="w") and CAS_WK or CAS_BK
+                            local qf=kf+kf
+                            local R=N.R; local oc=opp(cl)
+                            -- el rey no puede estar en jaque ni cruzar casillas atacadas;
+                            -- la casilla final la valida genLegal como cualquier jugada
+                            if hasBit(cas,kf) and row[8]==R and not row[6] and not row[7]
+                               and not attacked(b,br,5,oc) and not attacked(b,br,6,oc) then
+                                n=addMove(list,n,r,c,br,7,"cK")
+                            end
+                            if hasBit(cas,qf) and row[1]==R and not row[2] and not row[3] and not row[4]
+                               and not attacked(b,br,5,oc) and not attacked(b,br,4,oc) then
+                                n=addMove(list,n,r,c,br,3,"cQ")
+                            end
+                        end
+                    end
+                elseif t=="B" then n=slideGen(b,list,n,r,c,cl,DG_DR,DG_DC,capsOnly)
+                elseif t=="R" then n=slideGen(b,list,n,r,c,cl,OR_DR,OR_DC,capsOnly)
+                elseif t=="Q" then
+                    n=slideGen(b,list,n,r,c,cl,DG_DR,DG_DC,capsOnly)
+                    n=slideGen(b,list,n,r,c,cl,OR_DR,OR_DC,capsOnly)
+                end
+            end
+        end
+    end
+    return n
+end
+
+-- ---- Contexto de busqueda: tablero propio + reyes + buffers por ply ----
+-- Cada busqueda (IA, mate en N) tiene su contexto, asi una corrutina
+-- suspendida nunca pisa el estado de otra.
 local function findKing(board,color)
-    for r=1,8 do for c=1,8 do
-        if board[r][c]==color.."K" then return r,c end end end
+    local K=PNAME[color].K
+    for r=1,8 do local row=board[r]; for c=1,8 do
+        if row[c]==K then return r,c end end end
     return nil,nil
 end
 
+local function bindCtx(ctx,board)
+    ctx.b=board
+    ctx.kr.w,ctx.kc.w=findKing(board,"w")
+    ctx.kr.b,ctx.kc.b=findKing(board,"b")
+    return ctx
+end
+local function newCtx(board)
+    return bindCtx({ kr={}, kc={}, bufs={}, nodes=0 }, copyBoard(board))
+end
+local function getBuf(ctx,ply)
+    local l=ctx.bufs[ply]
+    if not l then l={}; ctx.bufs[ply]=l end
+    return l
+end
+
+local function makeMove(ctx,m)
+    local b=ctx.b
+    local fr,fc,tr,tc,sp=m.fr,m.fc,m.tr,m.tc,m.sp
+    local piece=b[fr][fc]; local cap
+    if sp=="ep" then cap=b[fr][tc]; b[fr][tc]=nil else cap=b[tr][tc] end
+    local placed=m.promo
+    if not placed and PTYP[piece]=="P" and (tr==8 or tr==1) then placed=PNAME[PCOL[piece]].Q end
+    b[tr][tc]=placed or piece; b[fr][fc]=nil
+    if sp=="cK" then b[tr][6]=b[tr][8]; b[tr][8]=nil
+    elseif sp=="cQ" then b[tr][4]=b[tr][1]; b[tr][1]=nil end
+    if PTYP[piece]=="K" then local cl=PCOL[piece]; ctx.kr[cl]=tr; ctx.kc[cl]=tc end
+    return piece,cap
+end
+
+local function unmakeMove(ctx,m,piece,cap)
+    local b=ctx.b
+    local fr,fc,tr,tc,sp=m.fr,m.fc,m.tr,m.tc,m.sp
+    b[fr][fc]=piece
+    if sp=="ep" then b[tr][tc]=nil; b[fr][tc]=cap
+    else
+        b[tr][tc]=cap
+        if sp=="cK" then b[tr][8]=b[tr][6]; b[tr][6]=nil
+        elseif sp=="cQ" then b[tr][1]=b[tr][4]; b[tr][4]=nil end
+    end
+    if PTYP[piece]=="K" then local cl=PCOL[piece]; ctx.kr[cl]=fr; ctx.kc[cl]=fc end
+end
+
+local function ctxInCheck(ctx,cl)
+    local r=ctx.kr[cl]
+    if not r then return true end   -- sin rey (tablero roto): tratar como jaque
+    return attacked(ctx.b,r,ctx.kc[cl],opp(cl))
+end
+
+-- Deja en list[1..k] solo las jugadas legales (compacta en el lugar).
+local function genLegal(ctx,cl,epSq,cas,list,capsOnly)
+    if not ctx.kr[cl] then return 0 end
+    local b=ctx.b
+    local n=genPseudo(b,cl,epSq,cas,list,capsOnly)
+    local oc=opp(cl); local kr,kc=ctx.kr,ctx.kc
+    local k=0
+    for i=1,n do
+        local m=list[i]
+        local piece,cap=makeMove(ctx,m)
+        local ok=not attacked(b,kr[cl],kc[cl],oc)
+        unmakeMove(ctx,m,piece,cap)
+        if ok then
+            k=k+1
+            if k~=i then list[i],list[k]=list[k],list[i] end
+        end
+    end
+    return k
+end
+
+local function copyMove(m)
+    if not m then return nil end
+    return { fr=m.fr, fc=m.fc, tr=m.tr, tc=m.tc, sp=m.sp, promo=m.promo }
+end
+
+-- ---- API "de tablero" para la UI (sincronica, nunca cede) ----
+local UICTX={ kr={}, kc={}, bufs={} }
+
 local function isInCheck(board,color)
-    local kr,kc=findKing(board,color); if not kr then return true end
-    local o=opp(color)
-    for r=1,8 do for c=1,8 do
-        if board[r][c] and col(board[r][c])==o then
-            for _,m in ipairs(rawMoves(board,r,c,nil,noCas)) do
-                if m.tr==kr and m.tc==kc then return true end end
-        end end end
-    return false
+    local kr,kc=findKing(board,color)
+    if not kr then return true end
+    return attacked(board,kr,kc,opp(color))
+end
+
+local function allLegalMoves(board,color,ep,cas)
+    local ctx=bindCtx(UICTX,board)
+    local list=getBuf(ctx,1)
+    local n=genLegal(ctx,color,epToSq(ep),casToMask(cas),list,false)
+    local out={}
+    for i=1,n do out[i]=copyMove(list[i]) end
+    return out
+end
+
+local function legalMoves(board,r,c,ep,cas)
+    local piece=board[r][c]; if not piece then return {} end
+    local out={}
+    for _,m in ipairs(allLegalMoves(board,PCOL[piece],ep,cas)) do
+        if m.fr==r and m.fc==c then out[#out+1]=m end
+    end
+    return out
+end
+
+local function hasLegalMoves(board,color,ep,cas)
+    local ctx=bindCtx(UICTX,board)
+    return genLegal(ctx,color,epToSq(ep),casToMask(cas),getBuf(ctx,1),false)>0
 end
 
 local function applyMove(board,mv)
     local nb=copyBoard(board); local piece=nb[mv.fr][mv.fc]
     nb[mv.tr][mv.tc]=piece; nb[mv.fr][mv.fc]=nil
-    if mv.sp=="ep" then local d=col(piece)=="w" and -1 or 1; nb[mv.tr+d][mv.tc]=nil
+    if mv.sp=="ep" then nb[mv.fr][mv.tc]=nil   -- el peon capturado queda al lado del origen
     elseif mv.sp=="cK" then nb[mv.tr][6]=nb[mv.tr][8]; nb[mv.tr][8]=nil
     elseif mv.sp=="cQ" then nb[mv.tr][4]=nb[mv.tr][1]; nb[mv.tr][1]=nil end
-    if typ(piece)=="P" and (mv.tr==8 or mv.tr==1) then nb[mv.tr][mv.tc]=col(piece).."Q" end
+    if PTYP[piece]=="P" and (mv.tr==8 or mv.tr==1) then
+        local cl=PCOL[piece]
+        local pr=mv.promo
+        if not (pr and PCOL[pr]==cl and PTYP[pr]~="P" and PTYP[pr]~="K") then pr=PNAME[cl].Q end
+        nb[mv.tr][mv.tc]=pr
+    end
     return nb
-end
-
-local function legalMoves(board,r,c,ep,cas)
-    local piece=board[r][c]; if not piece then return {} end
-    local cl=col(piece); local result={}
-    for _,m in ipairs(rawMoves(board,r,c,ep,cas)) do
-        local ok=true
-        if m.sp=="cK" then
-            if isInCheck(board,cl) then ok=false end
-            if ok then for _,cc in ipairs({6,7}) do
-                local tb=copyBoard(board); tb[m.tr][5]=nil; tb[m.tr][cc]=cl.."K"
-                if isInCheck(tb,cl) then ok=false; break end end end
-        elseif m.sp=="cQ" then
-            if isInCheck(board,cl) then ok=false end
-            if ok then for _,cc in ipairs({4,3}) do
-                local tb=copyBoard(board); tb[m.tr][5]=nil; tb[m.tr][cc]=cl.."K"
-                if isInCheck(tb,cl) then ok=false; break end end end
-        end
-        if ok then
-            local nb=applyMove(board,m)
-            if not isInCheck(nb,cl) then table.insert(result,m) end
-        end
-    end
-    return result
-end
-
-local function hasLegalMoves(board,color,ep,cas)
-    for r=1,8 do for c=1,8 do
-        if board[r][c] and col(board[r][c])==color then
-            if #legalMoves(board,r,c,ep,cas)>0 then return true end end end end
-    return false
-end
-
-local function allLegalMoves(board,color,ep,cas)
-    local all={}
-    for r=1,8 do for c=1,8 do
-        if board[r][c] and col(board[r][c])==color then
-            for _,m in ipairs(legalMoves(board,r,c,ep,cas)) do table.insert(all,m) end
-        end end end
-    return all
-end
-
--- ============================================================
--- MATE-IN-N SOLVER (for the "moves to win" indicator)
--- ============================================================
-local function epFromMove(board,m)
-    if m.sp=="dp" then
-        return {m.tr+(col(board[m.fr][m.fc])=="w" and -1 or 1), m.tc}
-    end
-    return nil
-end
-
-local function isCheckmate(board,color,ep,cas)
-    return isInCheck(board,color) and not hasLegalMoves(board,color,ep,cas)
-end
-
--- True if 'side' (to move) can force checkmate within n full moves.
-local function canForceMate(board,side,n,ep,cas)
-    if n<1 then return false end
-    local moves=allLegalMoves(board,side,ep,cas)
-    local foe=opp(side)
-    for _,m in ipairs(moves) do
-        local nb=applyMove(board,m)
-        local nep=epFromMove(board,m)
-        if isCheckmate(nb,foe,nep,cas) then
-            return true
-        elseif n>1 then
-            local replies=allLegalMoves(nb,foe,nep,cas)
-            if #replies>0 then
-                local all=true
-                for _,r in ipairs(replies) do
-                    local rb=applyMove(nb,r)
-                    local rep=epFromMove(nb,r)
-                    if not canForceMate(rb,side,n-1,rep,cas) then all=false; break end
-                end
-                if all then return true end
-            end
-        end
-    end
-    return false
 end
 
 local function countPieces(board)
     local n=0
-    for r=1,8 do for c=1,8 do if board[r][c] then n=n+1 end end end
+    for r=1,8 do local row=board[r]; for c=1,8 do if row[c] then n=n+1 end end end
     return n
 end
 
--- Cheap-ish mate distance for side to move; depth scaled by material.
-local function mateDistance(board,side,ep,cas)
-    local pc=countPieces(board)
-    local maxN = (pc<=6 and 3) or (pc<=12 and 2) or 1
-    for n=1,maxN do
-        if canForceMate(board,side,n,ep,cas) then return n end
-    end
-    return nil
-end
-
--- ============================================================
--- EVALUATION + MINIMAX
--- ============================================================
-local function evalBoard(board)
-    local score=0
+-- Material insuficiente: K-K, K+menor vs K, o solo alfiles del mismo color de casilla.
+local function insufficientMaterial(board)
+    local minors, bishopsOnly, sqColor = 0, true, nil
+    local sameColor=true
     for r=1,8 do for c=1,8 do
         local p=board[r][c]
         if p then
-            local cl=col(p); local pt=typ(p); local sign=cl=="w" and 1 or -1
-            score=score+sign*(PVAL[pt] or 0)
-            local tbl=PST[pt]
-            if tbl then
-                local pr=cl=="w" and (9-r) or r
-                score=score+sign*(tbl[pr] and tbl[pr][c] or 0)
+            local t=PTYP[p]
+            if t=="P" or t=="R" or t=="Q" then return false end
+            if t=="N" or t=="B" then
+                minors=minors+1
+                if t=="N" then bishopsOnly=false
+                else
+                    local sc=(r+c)%2
+                    if sqColor==nil then sqColor=sc elseif sqColor~=sc then sameColor=false end
+                end
             end
         end
     end end
+    if minors<=1 then return true end
+    return bishopsOnly and sameColor
+end
+
+-- ---- Clave de posicion (repeticion) ----
+-- El al paso solo cuenta si el bando que mueve tiene un peon que podria tomarlo.
+local function epRelevant(b,turn,epSq)
+    if not epSq or epSq==0 then return false end
+    local er=math.floor((epSq-1)/8)+1; local ec=(epSq-1)%8+1
+    local pr=(turn=="w") and er-1 or er+1
+    if pr<1 or pr>8 then return false end
+    local P=PNAME[turn].P
+    return (ec>1 and b[pr][ec-1]==P) or (ec<8 and b[pr][ec+1]==P) or false
+end
+local KEYBUF={}
+local function positionKey(b,turn,casMask,epSq)
+    local i=0
+    for r=1,8 do local row=b[r]; for c=1,8 do i=i+1; KEYBUF[i]=row[c] or "." end end
+    KEYBUF[65]=turn; KEYBUF[66]=casMask; KEYBUF[67]=":"
+    KEYBUF[68]=epRelevant(b,turn,epSq) and epSq or 0
+    return table.concat(KEYBUF,"",1,68)
+end
+local function gameKey(g)
+    return positionKey(g.board,g.turn,casToMask(g.castling),epToSq(g.epTarget))
+end
+
+-- ============================================================
+-- EVALUATION
+-- ============================================================
+-- Material + tabla de posicion precalculados por pieza y casilla (con signo:
+-- blancas suman, negras restan). Evaluar = 64 lecturas, sin llamadas.
+local PSQ={}
+for _,cl in ipairs({"w","b"}) do
+    for _,t in ipairs({"P","N","B","R","Q","K"}) do
+        local sign=(cl=="w") and 1 or -1
+        local tbl=PST[t]; local s={}
+        for r=1,8 do
+            s[r]={}
+            local pr=(cl=="w") and (9-r) or r
+            for c=1,8 do s[r][c]=sign*(PVAL[t]+((tbl and tbl[pr] and tbl[pr][c]) or 0)) end
+        end
+        PSQ[cl..t]=s
+    end
+end
+
+local function evalBoard(board)
+    local score=0
+    for r=1,8 do
+        local row=board[r]
+        for c=1,8 do
+            local p=row[c]
+            if p then score=score+PSQ[p][r][c] end
+        end
+    end
     return score
 end
 
--- ---- Cooperative (non-blocking) search plumbing --------------
--- The whole search runs inside a coroutine. Every so many nodes we check how
--- long this time-slice has run and yield if it's over budget, so WoW can draw
--- a frame before we continue. This is what stops the game from freezing while
--- the AI thinks: the work is spread across many frames instead of one.
+-- ---- Busqueda cooperativa (no bloquea el juego) --------------
+-- Toda la busqueda corre en una corrutina. Cada pocos nodos se mira el reloj
+-- y, si ya se gasto el presupuesto de este frame, se cede (yield) para que
+-- WoW dibuje. El presupuesto se ajusta a los FPS (ver aiTimer).
 local profclock = debugprofilestop or function() return GetTime()*1000 end
--- Check the clock every few nodes (small, so a single slice can't overrun a
--- frame even on WoW's slower interpreter) and yield once ~6 ms of work has
--- piled up. Keeps the client smooth while the AI thinks across many frames.
 local SEARCH = { nodes=0, sliceStart=0, budget=6 }
 local function ytick()
-    SEARCH.nodes = SEARCH.nodes + 1
-    if SEARCH.nodes >= 6 then
-        SEARCH.nodes = 0
-        if coroutine.running() and (profclock()-SEARCH.sliceStart) > SEARCH.budget then
+    local n=SEARCH.nodes+1
+    if n>=4 then
+        n=0
+        if (profclock()-SEARCH.sliceStart)>SEARCH.budget and coroutine.running() then
             coroutine.yield()
-            SEARCH.sliceStart = profclock()
+            SEARCH.sliceStart=profclock()
         end
     end
+    SEARCH.nodes=n
 end
 
--- MVV-LVA: value a capture by (victim*10 - attacker) so we try the most
--- profitable captures first -> far more alpha-beta cutoffs.
-local function mvvlva(board,m)
-    local victim=board[m.tr][m.tc]
-    if (not victim) and m.sp=="ep" then return 100*10 - (PVAL.P or 0) end
-    if not victim then return 0 end
-    local attacker=board[m.fr][m.fc]
-    return (PVAL[typ(victim)] or 0)*10 - (PVAL[typ(attacker)] or 0)
-end
-local function orderMoves(board,moves)
-    table.sort(moves,function(a,b) return mvvlva(board,a) > mvvlva(board,b) end)
-end
-local function captureMoves(board,color,ep,cas)
-    local caps={}
-    for _,m in ipairs(allLegalMoves(board,color,ep,cas)) do
-        if board[m.tr][m.tc] or m.sp=="ep" then table.insert(caps,m) end
+-- Orden de jugadas: capturas por MVV-LVA (victima grande, atacante chico)
+-- y coronaciones primero -> muchos mas cortes alfa-beta.
+local LVA={ P=1, N=3, B=3, R=5, Q=9, K=10 }
+local function scoreMoves(b,list,n)
+    for i=1,n do
+        local m=list[i]; local s=0
+        local v=b[m.tr][m.tc]
+        if v then s=1000+PVAL[PTYP[v]]-LVA[PTYP[b[m.fr][m.fc]]]
+        elseif m.sp=="ep" then s=1000+PVAL.P-LVA.P end
+        if m.promo then s=s+2000 end
+        m.score=s
     end
-    return caps
+end
+-- Seleccion perezosa: trae al frente la mejor que queda (si hay corte, no se ordena el resto).
+local function pickBest(list,i,n)
+    local bi,bs=i,list[i].score
+    for j=i+1,n do
+        local s=list[j].score
+        if s>bs then bi,bs=j,s end
+    end
+    if bi~=i then list[i],list[bi]=list[bi],list[i] end
 end
 
--- Quiescence: at the search horizon, keep resolving captures (and check
--- evasions) until the position is quiet. Kills the "horizon effect" so the
--- AI stops hanging pieces and always sees recaptures. Used by Expert only.
-local function quiesce(board,alpha,beta,maximizing,ep,cas,qdepth)
+local INF=math.huge
+local MATE=90000
+
+-- Quiescence: en el horizonte sigue resolviendo capturas (y salidas de jaque)
+-- hasta que la posicion quede tranquila. Evita que la IA cuelgue piezas.
+local function qsearch(ctx,ply,alpha,beta,cl,epSq,cas,qd)
     ytick()
-    local color=maximizing and "w" or "b"
-    local inChk=isInCheck(board,color)
+    local b=ctx.b
+    local inChk=ctxInCheck(ctx,cl)
     if not inChk then
-        local stand=evalBoard(board)
-        if maximizing then
-            if stand>=beta then return beta end
-            if stand>alpha then alpha=stand end
-        else
-            if stand<=alpha then return alpha end
-            if stand<beta then beta=stand end
-        end
+        local stand=evalBoard(b); if cl=="b" then stand=-stand end
+        if stand>=beta then return beta end
+        if stand>alpha then alpha=stand end
+        if qd<=0 then return alpha end
+    elseif qd<=0 then
+        local s=evalBoard(b); return (cl=="w") and s or -s
     end
-    if qdepth<=0 then return maximizing and alpha or beta end
-    local moves
-    if inChk then
-        moves=allLegalMoves(board,color,ep,cas)
-        if #moves==0 then return maximizing and -90000 or 90000 end   -- checkmate
-    else
-        moves=captureMoves(board,color,ep,cas)
+    local list=getBuf(ctx,ply)
+    local n=genLegal(ctx,cl,epSq,cas,list,not inChk)
+    if n==0 then
+        if inChk then return -MATE end
+        return alpha
     end
-    orderMoves(board,moves)
-    for _,m in ipairs(moves) do
-        local nb=applyMove(board,m)
-        local score=quiesce(nb,alpha,beta,not maximizing,epFromMove(board,m),cas,qdepth-1)
-        if maximizing then
-            if score>alpha then alpha=score end
-            if alpha>=beta then return beta end
-        else
-            if score<beta then beta=score end
-            if beta<=alpha then return alpha end
-        end
+    scoreMoves(b,list,n)
+    local oc=opp(cl)
+    for i=1,n do
+        pickBest(list,i,n)
+        local m=list[i]
+        local piece,cap=makeMove(ctx,m)
+        local sc=-qsearch(ctx,ply+1,-beta,-alpha,oc,epAfter(m),casAfter(cas,m),qd-1)
+        unmakeMove(ctx,m,piece,cap)
+        if sc>=beta then return beta end
+        if sc>alpha then alpha=sc end
     end
-    return maximizing and alpha or beta
+    return alpha
 end
 
-local function minimax(board,depth,alpha,beta,maximizing,ep,cas,useQS)
+-- Negamax alfa-beta: el puntaje es siempre desde el bando que mueve.
+local function negamax(ctx,ply,depth,alpha,beta,cl,epSq,cas,useQS)
     ytick()
-    if depth==0 then
-        if useQS then return quiesce(board,alpha,beta,maximizing,ep,cas,4), nil end
-        return evalBoard(board), nil
+    if depth<=0 then
+        if useQS then return qsearch(ctx,ply,alpha,beta,cl,epSq,cas,4) end
+        local s=evalBoard(ctx.b); return (cl=="w") and s or -s
     end
-    local color=maximizing and "w" or "b"
-    local moves=allLegalMoves(board,color,ep,cas)
-    if #moves==0 then
-        -- prefer faster mates: deeper 'depth' (mate closer to the root) scores higher
-        return isInCheck(board,color) and (maximizing and -(90000+depth) or (90000+depth)) or 0, nil
+    local b=ctx.b
+    local list=getBuf(ctx,ply)
+    local n=genLegal(ctx,cl,epSq,cas,list,false)
+    if n==0 then
+        -- mate mas cercano a la raiz = peor para el que lo sufre
+        if ctxInCheck(ctx,cl) then return -(MATE+depth) end
+        return 0
     end
-    orderMoves(board,moves)
-    local bestMove=nil
-    if maximizing then
-        local best=-math.huge
-        for _,m in ipairs(moves) do
-            local nb=applyMove(board,m)
-            local score=minimax(nb,depth-1,alpha,beta,false,epFromMove(board,m),cas,useQS)
-            if score>best then best=score; bestMove=m end
-            alpha=math.max(alpha,best); if beta<=alpha then break end
+    scoreMoves(b,list,n)
+    local oc=opp(cl)
+    local best=-INF
+    for i=1,n do
+        pickBest(list,i,n)
+        local m=list[i]
+        local piece,cap=makeMove(ctx,m)
+        local sc=-negamax(ctx,ply+1,depth-1,-beta,-alpha,oc,epAfter(m),casAfter(cas,m),useQS)
+        unmakeMove(ctx,m,piece,cap)
+        if sc>best then best=sc end
+        if sc>alpha then alpha=sc end
+        if alpha>=beta then break end
+    end
+    return best
+end
+
+-- Raiz: ademas evita (o busca, si va perdiendo) tablas por repeticion y 50 jugadas.
+local function rootSearch(ctx,depth,cl,epSq,cas,useQS,reps,halfmove)
+    local b=ctx.b
+    local list=getBuf(ctx,1)
+    local n=genLegal(ctx,cl,epSq,cas,list,false)
+    if n==0 then return nil end
+    scoreMoves(b,list,n)
+    local oc=opp(cl)
+    local alpha,beta=-INF,INF
+    local best,bestM=-INF,nil
+    for i=1,n do
+        pickBest(list,i,n)
+        local m=list[i]
+        local resets=(PTYP[b[m.fr][m.fc]]=="P") or b[m.tr][m.tc] or m.sp=="ep"
+        local piece,cap=makeMove(ctx,m)
+        local nep,ncas=epAfter(m),casAfter(cas,m)
+        local sc
+        if reps and (reps[positionKey(b,oc,ncas,nep)] or 0)>=2 then
+            sc=0
+        else
+            sc=-negamax(ctx,2,depth-1,-beta,-alpha,oc,nep,ncas,useQS)
+            -- la jugada 100 sin captura ni peon es tablas, salvo que de mate
+            if (not resets) and halfmove and halfmove+1>=100 and sc<MATE then sc=0 end
         end
-        return best,bestMove
-    else
-        local best=math.huge
-        for _,m in ipairs(moves) do
-            local nb=applyMove(board,m)
-            local score=minimax(nb,depth-1,alpha,beta,true,epFromMove(board,m),cas,useQS)
-            if score<best then best=score; bestMove=m end
-            beta=math.min(beta,best); if beta<=alpha then break end
-        end
-        return best,bestMove
+        unmakeMove(ctx,m,piece,cap)
+        if sc>best then best=sc; bestM=m end
+        if sc>alpha then alpha=sc end
     end
+    return copyMove(bestM)
+end
+
+-- ============================================================
+-- MATE-IN-N SOLVER (indicador "mate en N"; corre en corrutina)
+-- ============================================================
+local MATE_NODE_LIMIT=250000   -- si se pasa, se abandona (indicador vacio)
+
+-- True si 'cl' (que mueve) fuerza mate en n jugadas o menos.
+local function forceMate(ctx,ply,cl,n,epSq,cas)
+    ytick()
+    ctx.nodes=ctx.nodes+1
+    if ctx.nodes>MATE_NODE_LIMIT then ctx.abort=true end
+    if ctx.abort then return false end
+    local list=getBuf(ctx,ply)
+    local cnt=genLegal(ctx,cl,epSq,cas,list,false)
+    local oc=opp(cl)
+    for i=1,cnt do
+        local m=list[i]
+        local piece,cap=makeMove(ctx,m)
+        local nep,ncas=epAfter(m),casAfter(cas,m)
+        local replies=getBuf(ctx,ply+1)
+        local rc=genLegal(ctx,oc,nep,ncas,replies,false)
+        local ok=false
+        if rc==0 then
+            ok=ctxInCheck(ctx,oc)   -- sin respuestas: mate si hay jaque, ahogado si no
+        elseif n>1 then
+            ok=true
+            for j=1,rc do
+                local rm=replies[j]
+                local p2,c2=makeMove(ctx,rm)
+                local sub=forceMate(ctx,ply+2,cl,n-1,epAfter(rm),casAfter(ncas,rm))
+                unmakeMove(ctx,rm,p2,c2)
+                if not sub then ok=false; break end
+            end
+        end
+        unmakeMove(ctx,m,piece,cap)
+        if ok then return true end
+        if ctx.abort then return false end
+    end
+    return false
+end
+
+-- Distancia de mate para el bando que mueve; profundidad segun material.
+local function mateDistance(ctx,side,epSq,cas)
+    local pc=countPieces(ctx.b)
+    local maxN=(pc<=6 and 3) or (pc<=12 and 2) or 1
+    for n=1,maxN do
+        if forceMate(ctx,1,side,n,epSq,cas) then return n end
+        if ctx.abort then return nil end
+    end
+    return nil
 end
 
 local function getAIMove(g)
@@ -487,9 +779,12 @@ local function getAIMove(g)
         return all[math.random(math.min(2,#all))].m
     end
     if diff.mode=="minimax" then
-        local _,bestMove=minimax(g.board,diff.depth,-math.huge,math.huge,
-            aiColor=="w",g.epTarget,g.castling, diff.qsearch)
-        return bestMove or moves[math.random(#moves)]
+        -- se busca sobre una copia: la corrutina cede a mitad de arbol y el
+        -- tablero de la partida no puede quedar a medio mover en pantalla
+        local ctx=newCtx(g.board)
+        local mv=rootSearch(ctx,diff.depth,aiColor,epToSq(g.epTarget),casToMask(g.castling),
+                            diff.qsearch,g.reps,g.halfmove or 0)
+        return mv or moves[math.random(#moves)]
     end
     return moves[math.random(#moves)]
 end
@@ -543,7 +838,10 @@ local function initBoard()
     G.castling={wK=true,wRa=true,wRh=true,bK=true,bRa=true,bRh=true}
     G.lastFrom=nil; G.lastTo=nil; G.inCheck=false; G.gameOver=false; G.winner=nil
     G.startTimestamp=time(); G.elapsedSeconds=0; G.paused=false
-    G.undo={}; G.mate=nil; G.rematchOffered=false; G.thinker=nil
+    G.undo={}; G.mate=nil; G.mateJob=nil; G.rematchOffered=false; G.thinker=nil
+    -- regla de 50 jugadas y triple repeticion
+    G.halfmove=0; G.drawReason=nil
+    G.posKey=gameKey(G); G.reps={ [G.posKey]=1 }
 end
 
 -- ============================================================
@@ -576,6 +874,12 @@ end
 -- ============================================================
 -- SAVE / LOAD GAMES
 -- ============================================================
+local function copyReps(t)
+    local n={}
+    if t then for k,v in pairs(t) do n[k]=v end end
+    return n
+end
+
 local function serializeGame(g)
     return {
         board     = copyBoard(g.board),
@@ -585,6 +889,7 @@ local function serializeGame(g)
         epTarget  = g.epTarget, lastFrom = g.lastFrom, lastTo = g.lastTo,
         inCheck   = g.inCheck, aiMode = g.aiMode, diff = g.diff,
         elapsed   = gElapsed(g),
+        halfmove  = g.halfmove, posKey = g.posKey, reps = copyReps(g.reps),
     }
 end
 
@@ -612,7 +917,12 @@ local function deserializeInto(g,s,makeActive)
     g.gameActive = true; g.gameOver = false; g.winner = nil
     g.selR=nil; g.selC=nil; g.validMoves={}
     g.elapsedSeconds = s.elapsed or 0
-    g.undo={}; g.mate=nil; g.rematchOffered=false; g.thinker=nil
+    g.undo={}; g.mate=nil; g.mateJob=nil; g.rematchOffered=false; g.thinker=nil
+    -- partidas guardadas por versiones viejas no traen estos campos
+    g.halfmove   = s.halfmove or 0; g.drawReason=nil
+    g.posKey     = gameKey(g)
+    g.reps       = copyReps(s.reps)
+    if not g.reps[g.posKey] then g.reps[g.posKey]=1 end
     g.aiPending  = (g.aiMode and g.turn~=g.myColor) or false
     if makeActive then g.startTimestamp=time(); g.paused=false
     else g.startTimestamp=0; g.paused=true end
@@ -634,6 +944,7 @@ end
 -- ============================================================
 local updateBoard, updateTabs, updateDiffButtons, clearBoardDisplay, updateMate, updateSidePanel
 local showRematchPopup
+local showPromotion, hidePromotion, isPromotionOpen
 
 -- ============================================================
 -- UNDO (vs AI)
@@ -645,7 +956,7 @@ local function pushUndo(g)
         castling={wK=g.castling.wK,wRa=g.castling.wRa,wRh=g.castling.wRh,
                   bK=g.castling.bK,bRa=g.castling.bRa,bRh=g.castling.bRh},
         epTarget=g.epTarget, lastFrom=g.lastFrom, lastTo=g.lastTo,
-        inCheck=g.inCheck,
+        inCheck=g.inCheck, halfmove=g.halfmove, posKey=g.posKey,
     })
     while #g.undo>60 do table.remove(g.undo,1) end
 end
@@ -662,11 +973,15 @@ local function executeMove(mv,g)
         local cl=col(piece)
         g.castling[cl.."K"]=false; g.castling[cl.."Ra"]=false; g.castling[cl.."Rh"]=false
     elseif typ(piece)=="R" then
+        -- solo la torre que sale de su casilla inicial pierde el enroque
         local cl=col(piece)
-        if mv.fc==1 then g.castling[cl.."Ra"]=false end
-        if mv.fc==8 then g.castling[cl.."Rh"]=false end
+        if mv.fr==(cl=="w" and 1 or 8) then
+            if mv.fc==1 then g.castling[cl.."Ra"]=false end
+            if mv.fc==8 then g.castling[cl.."Rh"]=false end
+        end
     end
     local captured=g.board[mv.tr][mv.tc]
+    local resetsClock=(typ(piece)=="P") or captured or mv.sp=="ep"
     if captured and typ(captured)=="R" then
         local ccl=col(captured)
         if mv.tr==(ccl=="w" and 1 or 8) then
@@ -678,12 +993,25 @@ local function executeMove(mv,g)
     g.epTarget=nil
     if mv.sp=="dp" then local d=col(piece)=="w" and -1 or 1; g.epTarget={mv.tr+d,mv.tc} end
     g.board=applyMove(g.board,mv); g.turn=opp(g.turn)
+    g.halfmove=resetsClock and 0 or (g.halfmove or 0)+1
+    g.posKey=gameKey(g)
+    g.reps=g.reps or {}
+    g.reps[g.posKey]=(g.reps[g.posKey] or 0)+1
     g.inCheck=isInCheck(g.board,g.turn)
+    g.drawReason=nil
+    -- el mate tiene prioridad; despues las tablas automaticas
     if not hasLegalMoves(g.board,g.turn,g.epTarget,g.castling) then
         g.gameOver=true; g.winner=g.inCheck and opp(g.turn) or "draw"
+        if not g.inCheck then g.drawReason="stalemate" end
+    elseif g.reps[g.posKey]>=3 then
+        g.gameOver=true; g.winner="draw"; g.drawReason="repetition"
+    elseif g.halfmove>=100 then
+        g.gameOver=true; g.winner="draw"; g.drawReason="fifty"
+    elseif insufficientMaterial(g.board) then
+        g.gameOver=true; g.winner="draw"; g.drawReason="material"
     end
     g.selR=nil; g.selC=nil; g.validMoves={}
-    g.mate=nil  -- recomputed by updateMate
+    g.mate=nil; g.mateJob=nil  -- lo recalcula updateMate (en segundo plano)
     if g.gameOver then
         saveToHistory(g,getResultForPlayer(g,g.winner))
     end
@@ -728,6 +1056,7 @@ end
 
 local function setActiveSlot(idx)
     if idx==activeIdx then return end
+    hidePromotion()
     pauseGame(games[activeIdx])
     activeIdx=idx
     if not games[idx] then games[idx]=newGameState() end
@@ -757,6 +1086,7 @@ end
 local function closeTab(idx)
     if openTabs<=1 then return end          -- always keep at least one tab
     if idx<1 or idx>openTabs then return end
+    hidePromotion()
     local g=games[idx]
     if g and g.gameActive and not g.gameOver then
         -- abandon the game living in that tab
@@ -862,7 +1192,15 @@ updateMate = function()
     -- In the opening/midgame it's both costly and almost never forced.
     if countPieces(G.board) > 10 then MateLabel:SetText(""); G.mate=0; return end
     if G.mate==nil then
-        G.mate = mateDistance(G.board,G.turn,G.epTarget,G.castling) or 0
+        -- antes esto corria entero aca y congelaba el juego; ahora se arma una
+        -- corrutina que aiTimer avanza de a poco. En el turno de la IA no hace
+        -- falta: la posicion cambia en cuanto juega.
+        if not G.mateJob and not (G.aiMode and G.turn~=G.myColor) then
+            local ctx=newCtx(G.board)
+            local side,ep,cas=G.turn,epToSq(G.epTarget),casToMask(G.castling)
+            G.mateJob=coroutine.create(function() return mateDistance(ctx,side,ep,cas) end)
+        end
+        MateLabel:SetText(""); return
     end
     if G.mate and G.mate>0 then
         if G.turn==G.myColor then
@@ -934,7 +1272,11 @@ updateBoard = function()
     end
     if StatusLabel then
         if G.gameOver then
-            if G.winner=="draw" then StatusLabel:SetText("|cFFAAAAAA"..L["STALEMATE"].."|r")
+            if G.winner=="draw" then
+                local key=(G.drawReason=="repetition" and "DRAW_REPETITION")
+                       or (G.drawReason=="fifty" and "DRAW_FIFTY")
+                       or (G.drawReason=="material" and "DRAW_MATERIAL") or "STALEMATE"
+                StatusLabel:SetText("|cFFAAAAAA"..L[key].."|r")
             else
                 local wn=G.winner=="w" and "|cFFFFD700"..L["WHITE"].."|r" or "|cFFFF4400"..L["BLACK"].."|r"
                 StatusLabel:SetText(format(L["CHECKMATE"],wn))
@@ -989,6 +1331,7 @@ local function onSquareClick(dr,dc)
     if not G.gameActive or G.gameOver then return end
     if G.turn~=G.myColor then return end
     if G.aiPending then return end
+    if isPromotionOpen() then return end
     local br,bc=dispToBoard(dr,dc); local piece=G.board[br][bc]
     if G.selR then
         if br==G.selR and bc==G.selC then
@@ -997,15 +1340,38 @@ local function onSquareClick(dr,dc)
             local mv=nil
             for _,m in ipairs(G.validMoves) do if m.tr==br and m.tc==bc then mv=m; break end end
             if mv then
-                local wasPvP = (not G.aiMode) and G.opponent
                 local myGame = G
-                executeMove(mv,G)
-                if wasPvP then
-                    local sp=mv.sp or ""
-                    SendAddonMessage(PREFIX,"MOVE:"..mv.fr..","..mv.fc..","..mv.tr..","..mv.tc..","..sp,"WHISPER",myGame.opponent)
+                local function play(promoLetter)
+                    local wasPvP = (not myGame.aiMode) and myGame.opponent
+                    if promoLetter then mv.promo=myGame.myColor..promoLetter end
+                    executeMove(mv,myGame)
+                    if wasPvP then
+                        local sp=mv.sp or ""
+                        local msg="MOVE:"..mv.fr..","..mv.fc..","..mv.tr..","..mv.tc..","..sp
+                        -- la pieza elegida va en un campo extra; versiones viejas lo
+                        -- ignoran y coronan a dama
+                        if promoLetter then msg=msg..","..promoLetter end
+                        SendAddonMessage(PREFIX,msg,"WHISPER",myGame.opponent)
+                    end
+                    if myGame.aiMode and not myGame.gameOver then myGame.aiPending=true end
+                    if myGame.gameOver and not myGame.aiMode then showRematchPopup(myGame) end
+                    if myGame==G then updateBoard() else updateTabs() end
                 end
-                if G.aiMode and not G.gameOver then G.aiPending=true end
-                if G.gameOver and not G.aiMode then showRematchPopup(G) end
+                if typ(G.board[mv.fr][mv.fc])=="P" and (mv.tr==8 or mv.tr==1) then
+                    -- coronacion: el jugador elige la pieza
+                    G.selR=nil; G.selC=nil; G.validMoves={}
+                    updateBoard()
+                    local fromPiece=G.board[mv.fr][mv.fc]
+                    showPromotion(G.myColor,function(letter)
+                        -- la partida pudo cambiar mientras el popup estaba abierto
+                        if myGame.gameOver or myGame.turn~=myGame.myColor
+                           or myGame.board[mv.fr][mv.fc]~=fromPiece then return end
+                        play(letter)
+                    end)
+                    return
+                end
+                play(nil)
+                return
             else
                 if piece and col(piece)==G.myColor then
                     G.selR=br; G.selC=bc
@@ -1026,6 +1392,7 @@ end
 -- NEW GAME VS AI  (uses the current tab)
 -- ============================================================
 local function newGameVsAI(myColor)
+    hidePromotion()
     initBoard()
     G.myColor=myColor or "w"; G.gameActive=true; G.aiMode=true
     G.opponent=nil; G.diff=defaultDiff
@@ -1045,6 +1412,7 @@ local function doLocalRestart()
     local myColor  = G.myColor
     local opponent = G.opponent
     local diff     = G.diff
+    hidePromotion()
     initBoard()
     G.myColor    = myColor; G.gameActive = true; G.aiMode = wasAI
     G.opponent   = wasAI and nil or opponent; G.diff = diff
@@ -1080,6 +1448,7 @@ end
 
 local function abandonGame(silent)
     if not G.gameActive then if not silent then notify(L["N_NO_ACTIVE"]) end return end
+    hidePromotion()
     if not G.gameOver then saveToHistory(G,"loss") end
     if not G.aiMode and G.opponent and not G.gameOver then
         SendAddonMessage(PREFIX, "RESIGN", "WHISPER", G.opponent)
@@ -1093,18 +1462,30 @@ end
 
 local function undoMove()
     local g=G
-    if not (g.aiMode and g.gameActive) then notify(L["N_NO_UNDO"]); return end
+    -- partida terminada: ya quedo en el historial, deshacer la duplicaria
+    if not (g.aiMode and g.gameActive and not g.gameOver) then notify(L["N_NO_UNDO"]); return end
     if not g.undo or #g.undo==0 then notify(L["N_NO_UNDO"]); return end
+    hidePromotion()
     local function restore()
         local s=table.remove(g.undo)
+        -- la posicion que se deja ya no cuenta para la repeticion
+        if g.reps and g.posKey and g.reps[g.posKey] then
+            g.reps[g.posKey]=g.reps[g.posKey]-1
+            if g.reps[g.posKey]<=0 then g.reps[g.posKey]=nil end
+        end
         g.board=s.board; g.turn=s.turn; g.castling=s.castling
         g.epTarget=s.epTarget; g.lastFrom=s.lastFrom; g.lastTo=s.lastTo
-        g.inCheck=s.inCheck
+        g.inCheck=s.inCheck; g.halfmove=s.halfmove or 0
+        g.posKey=s.posKey or gameKey(g)
     end
     restore()
     if g.turn~=g.myColor and #g.undo>0 then restore() end
-    g.gameOver=false; g.winner=nil
-    g.aiPending=false; g.thinker=nil; g.selR=nil; g.selC=nil; g.validMoves={}; g.mate=nil
+    g.gameOver=false; g.winner=nil; g.drawReason=nil
+    g.thinker=nil; g.selR=nil; g.selC=nil; g.validMoves={}; g.mate=nil; g.mateJob=nil
+    -- si jugas con negras y solo habia movido la IA, vuelve a ser su turno:
+    -- antes quedaba trabada (nadie podia mover)
+    g.aiPending=(g.turn~=g.myColor)
+    updateTabs(); updateDiffButtons()
     updateBoard(); saveAllGames(); notify(L["N_MOVE_UNDONE"])
 end
 
@@ -1311,6 +1692,55 @@ showRematchPopup = function(g)
 end
 
 -- ============================================================
+-- PROMOTION PICKER (dama, torre, alfil o caballo)
+-- ============================================================
+local PromoFrame=nil
+local PROMO_PIECES={"Q","R","B","N"}
+
+isPromotionOpen = function() return PromoFrame~=nil and PromoFrame:IsShown() end
+hidePromotion = function()
+    if PromoFrame then PromoFrame._onPick=nil; PromoFrame:Hide() end
+end
+showPromotion = function(color,onPick)
+    if not PromoFrame then
+        local parent=BoardFrame or UIParent
+        local f=CreateFrame("Frame",nil,parent)
+        f:SetSize(SQ*4+28,SQ+28); f:SetPoint("CENTER")
+        f:SetFrameLevel(parent:GetFrameLevel()+20)
+        f:EnableMouse(true)
+        f:SetBackdrop({
+            bgFile="Interface/DialogFrame/UI-DialogBox-Background",
+            edgeFile="Interface/DialogFrame/UI-DialogBox-Border",
+            tile=true,tileSize=32,edgeSize=16,insets={left=5,right=5,top=5,bottom=5}
+        })
+        f.btns={}
+        for i,letter in ipairs(PROMO_PIECES) do
+            local b=CreateFrame("Button",nil,f)
+            b:SetSize(SQ,SQ); b:SetPoint("LEFT",14+(i-1)*SQ,0)
+            local bg=b:CreateTexture(nil,"BACKGROUND"); bg:SetAllPoints()
+            if i%2==1 then bg:SetTexture(0.91,0.83,0.68,1) else bg:SetTexture(0.43,0.27,0.10,1) end
+            local hl=b:CreateTexture(nil,"HIGHLIGHT"); hl:SetAllPoints(); hl:SetTexture(0.10,0.88,0.10,0.35)
+            local pt=b:CreateTexture(nil,"ARTWORK"); pt:SetSize(SQ-6,SQ-6); pt:SetPoint("CENTER"); b.pieceTex=pt
+            b.letter=letter
+            b:SetScript("OnClick",function(self)
+                local cb=f._onPick; f._onPick=nil; f:Hide()
+                if cb then cb(self.letter) end
+            end)
+            f.btns[i]=b
+        end
+        local close=CreateFrame("Button",nil,f,"UIPanelCloseButton")
+        close:SetSize(24,24); close:SetPoint("TOPRIGHT",6,6)
+        close:SetScript("OnClick",function() hidePromotion() end)
+        -- clic derecho fuera de las piezas tambien cancela
+        f:SetScript("OnMouseUp",function(self,btn) if btn=="RightButton" then hidePromotion() end end)
+        PromoFrame=f
+    end
+    for _,b in ipairs(PromoFrame.btns) do b.pieceTex:SetTexture(getPieceTex(color..b.letter)) end
+    PromoFrame._onPick=onPick
+    PromoFrame:Show()
+end
+
+-- ============================================================
 -- CHALLENGE POPUP
 -- ============================================================
 local function createChallengePopup()
@@ -1461,6 +1891,7 @@ local function createUI()
     local boardTop=30+TABH+2
     local boardFrame=CreateFrame("Frame",nil,ChessFrame)
     boardFrame:SetSize(boardPx,boardPx); boardFrame:SetPoint("TOPLEFT",labelSz+14,-boardTop)
+    BoardFrame=boardFrame
     local border=boardFrame:CreateTexture(nil,"BACKGROUND")
     border:SetPoint("TOPLEFT",-4,4); border:SetPoint("BOTTOMRIGHT",4,-4); border:SetTexture(0.12,0.07,0.01,1)
 
@@ -1610,11 +2041,33 @@ local function createUI()
         local ms=allLegalMoves(g.board,opp(g.myColor),g.epTarget,g.castling)
         return (#ms>0) and ms[math.random(#ms)] or nil
     end
+    -- Presupuesto por frame: ~35% del tiempo de un frame (entre 3 y 8 ms),
+    -- asi a 60 FPS la IA usa ~6 ms y a 30 FPS no se come el frame entero.
+    local function startSlice()
+        local fps=GetFramerate and GetFramerate() or 60
+        if not fps or fps<1 then fps=60 end
+        local b=350/fps
+        if b<3 then b=3 elseif b>8 then b=8 end
+        SEARCH.budget=b
+        SEARCH.nodes=0; SEARCH.sliceStart=profclock()
+    end
     local aiTimer=CreateFrame("Frame"); aiTimer.elapsed=0
     aiTimer:SetScript("OnUpdate",function(self,dt)
         local g=G
         if not (g.aiPending and g.aiMode and g.gameActive and not g.gameOver) then
-            self.elapsed=0; return
+            self.elapsed=0
+            -- sin IA pensando: avanzar el calculo del "mate en N" (solo con el tablero a la vista)
+            local job=g.mateJob
+            if job and ChessFrame and ChessFrame:IsShown() then
+                startSlice()
+                local ok,res=coroutine.resume(job)
+                if g.mateJob==job and (not ok or coroutine.status(job)=="dead") then
+                    g.mateJob=nil
+                    g.mate=(ok and res) or 0
+                    if g==G then updateMate() end
+                end
+            end
+            return
         end
         if not g.thinker then
             -- short "thinking" delay for feel, then spawn the search
@@ -1627,10 +2080,15 @@ local function createUI()
             return
         end
         -- resume the search for one slice, then let the frame render
-        SEARCH.nodes=0; SEARCH.sliceStart=profclock()
-        local ok,res=coroutine.resume(g.thinker)
-        if not ok or coroutine.status(g.thinker)=="dead" then
+        startSlice()
+        local th=g.thinker
+        local ok,res=coroutine.resume(th)
+        -- si deshacer/reiniciar descarto esta busqueda mientras corria, ignorarla
+        if g.thinker~=th then return end
+        if not ok or coroutine.status(th)=="dead" then
             local mv = ok and res or nil
+            -- mostrar el error en vez de tragarlo (se juega igual una al azar)
+            if not ok and geterrorhandler then geterrorhandler()(res) end
             g.thinker=nil; g.aiPending=false
             if not mv then mv=aiFallback(g) end
             if mv then executeMove(mv,g); updateBoard() end
@@ -1853,18 +2311,30 @@ eventFrame:SetScript("OnEvent",function(self,event,a1,a2,a3,a4)
             notify(format(L["N_RESTART_DECLINED"],sName))
 
         elseif msg:sub(1,5)=="MOVE:" then
-            local fr,fc,tr,tc,sp=msg:match("MOVE:(%d+),(%d+),(%d+),(%d+),(.*)")
+            local fr,fc,tr,tc,rest=msg:match("^MOVE:(%d+),(%d+),(%d+),(%d+),(.*)$")
             fr,fc,tr,tc=tonumber(fr),tonumber(fc),tonumber(tr),tonumber(tc)
-            sp=(sp=="" or sp=="nil") and nil or sp
+            -- campo extra opcional con la pieza de coronacion (Q/R/B/N)
+            local promoLetter=rest and rest:match(",([QRBN])$")
             if fr and fc and tr and tc then
                 for i=1,MAX_GAMES do
                     local g=games[i]
                     if g and g.gameActive and not g.gameOver and not g.aiMode
                        and shortName(g.opponent)==sName and g.turn~=g.myColor then
-                        executeMove({fr=fr,fc=fc,tr=tr,tc=tc,sp=sp},g)
+                        -- solo se acepta si es legal aca; el tipo especial (enroque,
+                        -- al paso) se toma de nuestra generacion, no del mensaje
+                        local mv=nil
+                        if inb(fr,fc) and inb(tr,tc) and g.board[fr][fc] and col(g.board[fr][fc])==g.turn then
+                            for _,m in ipairs(legalMoves(g.board,fr,fc,g.epTarget,g.castling)) do
+                                if m.tr==tr and m.tc==tc then mv=m; break end
+                            end
+                        end
+                        if not mv then break end
+                        if promoLetter and mv.promo then mv.promo=g.turn..promoLetter end
+                        executeMove(mv,g)
                         if i==activeIdx then updateBoard() else updateTabs() end
                         if g.gameOver then
-                            notify(g.winner==g.myColor and L["N_YOU_WIN"] or L["N_YOU_LOSE"])
+                            if g.winner=="draw" then notify(L["N_DRAW"])
+                            else notify(g.winner==g.myColor and L["N_YOU_WIN"] or L["N_YOU_LOSE"]) end
                             showRematchPopup(g)
                         else
                             alertMyTurn(sName)

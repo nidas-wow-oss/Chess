@@ -1,16 +1,7 @@
--- ============================================================
--- WoW Chess Addon v5.1 for WotLK 3.3.5a
--- English base (Spanish auto-applies only on esES/esMX clients).
--- Chrome-style tabs with a "+" button, empty board on open,
--- Escape toggle, arena "gates open" auto-minimize, mate-in-N
--- indicator, undo vs AI, opponent name display, agreed PvP
--- restart, rematch offer, minimap move alert, aligned history.
--- ============================================================
-
 local ADDON_NAME = "Chess"
 local PREFIX     = "WoWChess"
 local SQ         = 56
-local MAX_GAMES  = 5      -- maximum number of simultaneous game tabs
+local MAX_GAMES  = 5
 local TAB_H      = 22
 
 local format = string.format
@@ -20,15 +11,8 @@ local L = ChessLocale or setmetatable({}, { __index = function(_, k) return k en
 _G.ChessAddon = _G.ChessAddon or {}
 local API = _G.ChessAddon
 
--- ============================================================
--- SAVEDVARIABLES
--- ChessDB = { history={}, games={}, activeIdx, openTabs, settings={} }
--- ============================================================
 local DB
 
--- ============================================================
--- DIFFICULTIES
--- ============================================================
 local DIFFICULTIES = {
     [1] = { name=L["DIFF_NOVICE"], color="88FF88", desc=L["DIFF_NOVICE_DESC"], mode="random",  depth=0 },
     [2] = { name=L["DIFF_EASY"],   color="88CCFF", desc=L["DIFF_EASY_DESC"],   mode="greedy",  depth=0 },
@@ -38,9 +22,6 @@ local DIFFICULTIES = {
 }
 local defaultDiff = 3
 
--- ============================================================
--- TEXTURES
--- ============================================================
 local PIECE_TEX_BASE = "Interface\\AddOns\\Chess\\Textures\\"
 local function getPieceTex(piece)
     if not piece then return nil end
@@ -49,9 +30,6 @@ local function getPieceTex(piece)
     else             return PIECE_TEX_BASE.."black\\"..pt:lower() end
 end
 
--- ============================================================
--- EVALUATION TABLES
--- ============================================================
 local PVAL = { P=100, N=320, B=330, R=500, Q=900, K=20000 }
 local PST = {
     P={{0,0,0,0,0,0,0,0},{50,50,50,50,50,50,50,50},{10,10,20,30,30,20,10,10},
@@ -77,9 +55,6 @@ local PST = {
        {20,20,0,0,0,0,20,20},{20,30,10,0,0,10,30,20}},
 }
 
--- ============================================================
--- GAME STATE
--- ============================================================
 local function emptyBoard()
     local b={}
     for r=1,8 do b[r]={} for c=1,8 do b[r][c]=nil end end
@@ -97,8 +72,8 @@ local function newGameState()
         aiPending=false,
         diff=defaultDiff,
         startTimestamp=0, elapsedSeconds=0, paused=false,
-        undo={},          -- snapshot stack (for Undo vs AI)
-        mate=nil,         -- cached mate distance for side to move
+        undo={},
+        mate=nil,
         rematchOffered=false,
     }
 end
@@ -107,12 +82,11 @@ local games = {}
 for i=1,MAX_GAMES do games[i]=newGameState() end
 local activeIdx  = 1
 local G          = games[activeIdx]
-local openTabs   = 1     -- how many Chrome tabs are currently visible (1..MAX_GAMES)
+local openTabs   = 1
 
 local pendingChallenge  = nil
 local outgoingChallenge = nil
 
--- UI references
 local BoardFrame
 local ChessFrame, SquareBtns, TurnLabel, OppLabel, StatusLabel, TimerLabel, MateLabel, NoticeLabel
 local DiffBtns  = {}
@@ -124,21 +98,11 @@ local HistoryFrame = nil
 local ChallengePopup = nil
 local ConfirmPopup = nil
 
--- ============================================================
--- HELPERS
--- ============================================================
 local function shortName(name)
     if not name then return nil end
     return name:match("^([^%-]+)") or name
 end
 
--- ============================================================
--- CHESS LOGIC
--- Motor rapido: tablas de consulta en vez de string:sub, ataques
--- detectados mirando desde la casilla (sin generar las jugadas del
--- rival) y hacer/deshacer sobre un solo tablero durante la busqueda.
--- La busqueda no crea tablas por nodo: menos basura, menos tirones del GC.
--- ============================================================
 local PCOL, PTYP, PNAME = {}, {}, { w={}, b={} }
 for _,cl in ipairs({"w","b"}) do
     for _,t in ipairs({"P","N","B","R","Q","K"}) do
@@ -146,7 +110,6 @@ for _,cl in ipairs({"w","b"}) do
     end
 end
 
--- leer t[nil] devuelve nil en Lua 5.1, asi que no hace falta chequear p
 local function col(p) return PCOL[p] end
 local function typ(p) return PTYP[p] end
 local function opp(c) return c=="w" and "b" or "w" end
@@ -163,10 +126,9 @@ local KG_DR={1,1,1,0,0,-1,-1,-1};  local KG_DC={1,0,-1,1,-1,1,0,-1}
 local DG_DR={1,1,-1,-1};           local DG_DC={1,-1,1,-1}
 local OR_DR={1,-1,0,0};            local OR_DC={0,0,1,-1}
 
--- True si la casilla (r,c) esta atacada por el color 'by'.
 local function attacked(b,r,c,by)
     local N=PNAME[by]
-    -- un peon blanco ataca hacia arriba: se para una fila por debajo
+
     local pr=(by=="w") and r-1 or r+1
     if pr>=1 and pr<=8 then
         local row=b[pr]; local P=N.P
@@ -202,7 +164,6 @@ local function attacked(b,r,c,by)
     return false
 end
 
--- ---- Enroque como mascara de bits (no crea tablas en la busqueda) ----
 local CAS_WK, CAS_WQ, CAS_BK, CAS_BQ = 1,2,4,8
 local function hasBit(x,f) return x%(f+f)>=f end
 local function casToMask(cas)
@@ -214,7 +175,7 @@ local function casToMask(cas)
     if cas.bK and cas.bRa then m=m+CAS_BQ end
     return m
 end
--- casilla (indice 1..64) -> derechos que se pierden si algo sale o llega ahi
+
 local CAS_NEXT={}
 do
     local clear={ [5]=CAS_WK+CAS_WQ, [8]=CAS_WK, [1]=CAS_WQ,
@@ -237,7 +198,7 @@ local function casAfter(cas,m)
     t=CAS_NEXT[(m.tr-1)*8+m.tc]; if t then cas=t[cas] end
     return cas
 end
--- al paso como indice de casilla (0 = ninguno)
+
 local function epAfter(m)
     if m.sp=="dp" then return ((m.fr+m.tr)/2-1)*8+m.fc end
     return 0
@@ -247,7 +208,6 @@ local function epToSq(ep)
     return 0
 end
 
--- ---- Generacion de jugadas sobre un buffer reutilizable ----
 local function addMove(list,n,fr,fc,tr,tc,sp,promo)
     n=n+1
     local m=list[n]
@@ -272,8 +232,6 @@ local function slideGen(b,list,n,r,c,cl,DR,DC,capsOnly)
     return n
 end
 
--- Jugadas pseudo-legales de 'cl'. capsOnly = solo capturas y coronaciones.
--- La coronacion se genera a dama; la eleccion del jugador se aplica aparte.
 local function genPseudo(b,cl,epSq,cas,list,capsOnly)
     local n=0
     local N=PNAME[cl]; local Q=N.Q
@@ -326,8 +284,7 @@ local function genPseudo(b,cl,epSq,cas,list,capsOnly)
                             local kf=(cl=="w") and CAS_WK or CAS_BK
                             local qf=kf+kf
                             local R=N.R; local oc=opp(cl)
-                            -- el rey no puede estar en jaque ni cruzar casillas atacadas;
-                            -- la casilla final la valida genLegal como cualquier jugada
+
                             if hasBit(cas,kf) and row[8]==R and not row[6] and not row[7]
                                and not attacked(b,br,5,oc) and not attacked(b,br,6,oc) then
                                 n=addMove(list,n,r,c,br,7,"cK")
@@ -350,9 +307,6 @@ local function genPseudo(b,cl,epSq,cas,list,capsOnly)
     return n
 end
 
--- ---- Contexto de busqueda: tablero propio + reyes + buffers por ply ----
--- Cada busqueda (IA, mate en N) tiene su contexto, asi una corrutina
--- suspendida nunca pisa el estado de otra.
 local function findKing(board,color)
     local K=PNAME[color].K
     for r=1,8 do local row=board[r]; for c=1,8 do
@@ -404,11 +358,10 @@ end
 
 local function ctxInCheck(ctx,cl)
     local r=ctx.kr[cl]
-    if not r then return true end   -- sin rey (tablero roto): tratar como jaque
+    if not r then return true end
     return attacked(ctx.b,r,ctx.kc[cl],opp(cl))
 end
 
--- Deja en list[1..k] solo las jugadas legales (compacta en el lugar).
 local function genLegal(ctx,cl,epSq,cas,list,capsOnly)
     if not ctx.kr[cl] then return 0 end
     local b=ctx.b
@@ -433,7 +386,6 @@ local function copyMove(m)
     return { fr=m.fr, fc=m.fc, tr=m.tr, tc=m.tc, sp=m.sp, promo=m.promo }
 end
 
--- ---- API "de tablero" para la UI (sincronica, nunca cede) ----
 local UICTX={ kr={}, kc={}, bufs={} }
 
 local function isInCheck(board,color)
@@ -468,7 +420,7 @@ end
 local function applyMove(board,mv)
     local nb=copyBoard(board); local piece=nb[mv.fr][mv.fc]
     nb[mv.tr][mv.tc]=piece; nb[mv.fr][mv.fc]=nil
-    if mv.sp=="ep" then nb[mv.fr][mv.tc]=nil   -- el peon capturado queda al lado del origen
+    if mv.sp=="ep" then nb[mv.fr][mv.tc]=nil
     elseif mv.sp=="cK" then nb[mv.tr][6]=nb[mv.tr][8]; nb[mv.tr][8]=nil
     elseif mv.sp=="cQ" then nb[mv.tr][4]=nb[mv.tr][1]; nb[mv.tr][1]=nil end
     if PTYP[piece]=="P" and (mv.tr==8 or mv.tr==1) then
@@ -486,7 +438,6 @@ local function countPieces(board)
     return n
 end
 
--- Material insuficiente: K-K, K+menor vs K, o solo alfiles del mismo color de casilla.
 local function insufficientMaterial(board)
     local minors, bishopsOnly, sqColor = 0, true, nil
     local sameColor=true
@@ -509,8 +460,6 @@ local function insufficientMaterial(board)
     return bishopsOnly and sameColor
 end
 
--- ---- Clave de posicion (repeticion) ----
--- El al paso solo cuenta si el bando que mueve tiene un peon que podria tomarlo.
 local function epRelevant(b,turn,epSq)
     if not epSq or epSq==0 then return false end
     local er=math.floor((epSq-1)/8)+1; local ec=(epSq-1)%8+1
@@ -531,11 +480,6 @@ local function gameKey(g)
     return positionKey(g.board,g.turn,casToMask(g.castling),epToSq(g.epTarget))
 end
 
--- ============================================================
--- EVALUATION
--- ============================================================
--- Material + tabla de posicion precalculados por pieza y casilla (con signo:
--- blancas suman, negras restan). Evaluar = 64 lecturas, sin llamadas.
 local PSQ={}
 for _,cl in ipairs({"w","b"}) do
     for _,t in ipairs({"P","N","B","R","Q","K"}) do
@@ -562,10 +506,6 @@ local function evalBoard(board)
     return score
 end
 
--- ---- Busqueda cooperativa (no bloquea el juego) --------------
--- Toda la busqueda corre en una corrutina. Cada pocos nodos se mira el reloj
--- y, si ya se gasto el presupuesto de este frame, se cede (yield) para que
--- WoW dibuje. El presupuesto se ajusta a los FPS (ver aiTimer).
 local profclock = debugprofilestop or function() return GetTime()*1000 end
 local SEARCH = { nodes=0, sliceStart=0, budget=6 }
 local function ytick()
@@ -580,8 +520,6 @@ local function ytick()
     SEARCH.nodes=n
 end
 
--- Orden de jugadas: capturas por MVV-LVA (victima grande, atacante chico)
--- y coronaciones primero -> muchos mas cortes alfa-beta.
 local LVA={ P=1, N=3, B=3, R=5, Q=9, K=10 }
 local function scoreMoves(b,list,n)
     for i=1,n do
@@ -593,7 +531,7 @@ local function scoreMoves(b,list,n)
         m.score=s
     end
 end
--- Seleccion perezosa: trae al frente la mejor que queda (si hay corte, no se ordena el resto).
+
 local function pickBest(list,i,n)
     local bi,bs=i,list[i].score
     for j=i+1,n do
@@ -606,8 +544,6 @@ end
 local INF=math.huge
 local MATE=90000
 
--- Quiescence: en el horizonte sigue resolviendo capturas (y salidas de jaque)
--- hasta que la posicion quede tranquila. Evita que la IA cuelgue piezas.
 local function qsearch(ctx,ply,alpha,beta,cl,epSq,cas,qd)
     ytick()
     local b=ctx.b
@@ -640,7 +576,6 @@ local function qsearch(ctx,ply,alpha,beta,cl,epSq,cas,qd)
     return alpha
 end
 
--- Negamax alfa-beta: el puntaje es siempre desde el bando que mueve.
 local function negamax(ctx,ply,depth,alpha,beta,cl,epSq,cas,useQS)
     ytick()
     if depth<=0 then
@@ -651,7 +586,7 @@ local function negamax(ctx,ply,depth,alpha,beta,cl,epSq,cas,useQS)
     local list=getBuf(ctx,ply)
     local n=genLegal(ctx,cl,epSq,cas,list,false)
     if n==0 then
-        -- mate mas cercano a la raiz = peor para el que lo sufre
+
         if ctxInCheck(ctx,cl) then return -(MATE+depth) end
         return 0
     end
@@ -671,7 +606,6 @@ local function negamax(ctx,ply,depth,alpha,beta,cl,epSq,cas,useQS)
     return best
 end
 
--- Raiz: ademas evita (o busca, si va perdiendo) tablas por repeticion y 50 jugadas.
 local function rootSearch(ctx,depth,cl,epSq,cas,useQS,reps,halfmove)
     local b=ctx.b
     local list=getBuf(ctx,1)
@@ -692,7 +626,7 @@ local function rootSearch(ctx,depth,cl,epSq,cas,useQS,reps,halfmove)
             sc=0
         else
             sc=-negamax(ctx,2,depth-1,-beta,-alpha,oc,nep,ncas,useQS)
-            -- la jugada 100 sin captura ni peon es tablas, salvo que de mate
+
             if (not resets) and halfmove and halfmove+1>=100 and sc<MATE then sc=0 end
         end
         unmakeMove(ctx,m,piece,cap)
@@ -702,12 +636,8 @@ local function rootSearch(ctx,depth,cl,epSq,cas,useQS,reps,halfmove)
     return copyMove(bestM)
 end
 
--- ============================================================
--- MATE-IN-N SOLVER (indicador "mate en N"; corre en corrutina)
--- ============================================================
-local MATE_NODE_LIMIT=250000   -- si se pasa, se abandona (indicador vacio)
+local MATE_NODE_LIMIT=250000
 
--- True si 'cl' (que mueve) fuerza mate en n jugadas o menos.
 local function forceMate(ctx,ply,cl,n,epSq,cas)
     ytick()
     ctx.nodes=ctx.nodes+1
@@ -724,7 +654,7 @@ local function forceMate(ctx,ply,cl,n,epSq,cas)
         local rc=genLegal(ctx,oc,nep,ncas,replies,false)
         local ok=false
         if rc==0 then
-            ok=ctxInCheck(ctx,oc)   -- sin respuestas: mate si hay jaque, ahogado si no
+            ok=ctxInCheck(ctx,oc)
         elseif n>1 then
             ok=true
             for j=1,rc do
@@ -742,7 +672,6 @@ local function forceMate(ctx,ply,cl,n,epSq,cas)
     return false
 end
 
--- Distancia de mate para el bando que mueve; profundidad segun material.
 local function mateDistance(ctx,side,epSq,cas)
     local pc=countPieces(ctx.b)
     local maxN=(pc<=6 and 3) or (pc<=12 and 2) or 1
@@ -779,8 +708,7 @@ local function getAIMove(g)
         return all[math.random(math.min(2,#all))].m
     end
     if diff.mode=="minimax" then
-        -- se busca sobre una copia: la corrutina cede a mitad de arbol y el
-        -- tablero de la partida no puede quedar a medio mover en pantalla
+
         local ctx=newCtx(g.board)
         local mv=rootSearch(ctx,diff.depth,aiColor,epToSq(g.epTarget),casToMask(g.castling),
                             diff.qsearch,g.reps,g.halfmove or 0)
@@ -789,9 +717,6 @@ local function getAIMove(g)
     return moves[math.random(#moves)]
 end
 
--- ============================================================
--- TIME
--- ============================================================
 local function formatSeconds(s)
     s=math.floor(s or 0)
     local h=math.floor(s/3600)
@@ -823,9 +748,6 @@ local function resumeGame(g)
     g.paused = false
 end
 
--- ============================================================
--- BOARD INITIALIZATION (acts on active game G)
--- ============================================================
 local function initBoard()
     G.board=emptyBoard()
     local back={"R","N","B","Q","K","B","N","R"}
@@ -839,14 +761,11 @@ local function initBoard()
     G.lastFrom=nil; G.lastTo=nil; G.inCheck=false; G.gameOver=false; G.winner=nil
     G.startTimestamp=time(); G.elapsedSeconds=0; G.paused=false
     G.undo={}; G.mate=nil; G.mateJob=nil; G.rematchOffered=false; G.thinker=nil
-    -- regla de 50 jugadas y triple repeticion
+
     G.halfmove=0; G.drawReason=nil
     G.posKey=gameKey(G); G.reps={ [G.posKey]=1 }
 end
 
--- ============================================================
--- HISTORY
--- ============================================================
 local function getResultForPlayer(g,winner)
     if winner=="draw" then return "draw" end
     if winner==g.myColor then return "win" end
@@ -871,9 +790,6 @@ local function saveToHistory(g,result)
     while #DB.history>100 do table.remove(DB.history) end
 end
 
--- ============================================================
--- SAVE / LOAD GAMES
--- ============================================================
 local function copyReps(t)
     local n={}
     if t then for k,v in pairs(t) do n[k]=v end end
@@ -898,7 +814,7 @@ local function saveAllGames()
     DB.games = {}
     for i=1,MAX_GAMES do
         local g=games[i]
-        -- only persist games that live in a currently open tab
+
         if i<=openTabs and g and g.gameActive and not g.gameOver then
             DB.games[i]=serializeGame(g)
         end
@@ -918,7 +834,7 @@ local function deserializeInto(g,s,makeActive)
     g.selR=nil; g.selC=nil; g.validMoves={}
     g.elapsedSeconds = s.elapsed or 0
     g.undo={}; g.mate=nil; g.mateJob=nil; g.rematchOffered=false; g.thinker=nil
-    -- partidas guardadas por versiones viejas no traen estos campos
+
     g.halfmove   = s.halfmove or 0; g.drawReason=nil
     g.posKey     = gameKey(g)
     g.reps       = copyReps(s.reps)
@@ -928,9 +844,6 @@ local function deserializeInto(g,s,makeActive)
     else g.startTimestamp=0; g.paused=true end
 end
 
--- ============================================================
--- NOTIFICATIONS
--- ============================================================
 local noticeExpire = 0
 local function notify(text)
     if NoticeLabel then
@@ -939,16 +852,10 @@ local function notify(text)
     end
 end
 
--- ============================================================
--- FORWARD DECLARATIONS
--- ============================================================
 local updateBoard, updateTabs, updateDiffButtons, clearBoardDisplay, updateMate, updateSidePanel
 local showRematchPopup
 local showPromotion, hidePromotion, isPromotionOpen
 
--- ============================================================
--- UNDO (vs AI)
--- ============================================================
 local function pushUndo(g)
     g.undo = g.undo or {}
     table.insert(g.undo, {
@@ -961,9 +868,6 @@ local function pushUndo(g)
     while #g.undo>60 do table.remove(g.undo,1) end
 end
 
--- ============================================================
--- EXECUTE MOVE
--- ============================================================
 local function executeMove(mv,g)
     g = g or G
     local piece=g.board[mv.fr][mv.fc]
@@ -973,7 +877,7 @@ local function executeMove(mv,g)
         local cl=col(piece)
         g.castling[cl.."K"]=false; g.castling[cl.."Ra"]=false; g.castling[cl.."Rh"]=false
     elseif typ(piece)=="R" then
-        -- solo la torre que sale de su casilla inicial pierde el enroque
+
         local cl=col(piece)
         if mv.fr==(cl=="w" and 1 or 8) then
             if mv.fc==1 then g.castling[cl.."Ra"]=false end
@@ -999,7 +903,7 @@ local function executeMove(mv,g)
     g.reps[g.posKey]=(g.reps[g.posKey] or 0)+1
     g.inCheck=isInCheck(g.board,g.turn)
     g.drawReason=nil
-    -- el mate tiene prioridad; despues las tablas automaticas
+
     if not hasLegalMoves(g.board,g.turn,g.epTarget,g.castling) then
         g.gameOver=true; g.winner=g.inCheck and opp(g.turn) or "draw"
         if not g.inCheck then g.drawReason="stalemate" end
@@ -1011,23 +915,17 @@ local function executeMove(mv,g)
         g.gameOver=true; g.winner="draw"; g.drawReason="material"
     end
     g.selR=nil; g.selC=nil; g.validMoves={}
-    g.mate=nil; g.mateJob=nil  -- lo recalcula updateMate (en segundo plano)
+    g.mate=nil; g.mateJob=nil
     if g.gameOver then
         saveToHistory(g,getResultForPlayer(g,g.winner))
     end
     saveAllGames()
 end
 
--- ============================================================
--- COORDINATES
--- ============================================================
 local function dispToBoard(dr,dc)
     if G.myColor=="w" then return 9-dr,dc else return dr,9-dc end
 end
 
--- ============================================================
--- SLOT / TAB MANAGEMENT
--- ============================================================
 local function countActiveGames()
     local n=0
     for i=1,MAX_GAMES do
@@ -1037,8 +935,6 @@ local function countActiveGames()
     return n
 end
 
--- Prefer the current tab if it's free, then any other free open tab,
--- and finally open a brand new tab if we still have room.
 local function pickSlotForNew()
     local cur=games[activeIdx]
     if not (cur and cur.gameActive and not cur.gameOver) then return activeIdx end
@@ -1084,18 +980,18 @@ local function openNewTab()
 end
 
 local function closeTab(idx)
-    if openTabs<=1 then return end          -- always keep at least one tab
+    if openTabs<=1 then return end
     if idx<1 or idx>openTabs then return end
     hidePromotion()
     local g=games[idx]
     if g and g.gameActive and not g.gameOver then
-        -- abandon the game living in that tab
+
         if not g.aiMode and g.opponent then
             SendAddonMessage(PREFIX,"RESIGN","WHISPER",g.opponent)
         end
         saveToHistory(g,"loss")
     end
-    -- shift the remaining tabs left so there are no gaps
+
     for i=idx,openTabs-1 do games[i]=games[i+1] end
     games[openTabs]=newGameState()
     openTabs=openTabs-1
@@ -1108,9 +1004,6 @@ local function closeTab(idx)
     saveAllGames()
 end
 
--- ============================================================
--- DIFFICULTY BUTTONS
--- ============================================================
 updateDiffButtons = function()
     local hd = (G.aiMode and G.gameActive and not G.gameOver) and G.diff or defaultDiff
     for i,btn in ipairs(DiffBtns) do
@@ -1122,9 +1015,6 @@ updateDiffButtons = function()
     end
 end
 
--- ============================================================
--- TABS (Chrome style)
--- ============================================================
 local function tabLabel(g)
     if not (g and g.gameActive) then return L["TAB_EMPTY"] end
     if g.aiMode then return L["TAB_VS_AI"] end
@@ -1136,12 +1026,12 @@ updateTabs = function()
     local strip  = TabWidgets[1].frame:GetParent()
     local stripW = SQ*8
     local gap    = 3
-    -- reserve room for the "+" button while more tabs can still be opened
+
     local plusW  = (openTabs<MAX_GAMES) and (TAB_H+gap) or 0
     local tabW   = math.floor((stripW - plusW - (openTabs-1)*gap)/openTabs)
     if tabW>108 then tabW=108 end
     if tabW<44  then tabW=44  end
-    -- rough character budget so long names don't wrap onto a second line
+
     local maxChars = math.max(3, math.floor((tabW-24)/7))
 
     local x0=0
@@ -1164,7 +1054,7 @@ updateTabs = function()
                 w.bg:SetTexture(0.22,0.18,0.11,0.9)
                 w.text:SetText("|cFFDDCCAA"..lbl.."|r")
             end
-            -- a tab can be closed as long as it isn't the last one
+
             if openTabs>1 then w.close:Show() else w.close:Hide() end
             x0 = x0 + tabW + gap
         else
@@ -1182,19 +1072,13 @@ updateTabs = function()
     end
 end
 
--- ============================================================
--- MATE INDICATOR
--- ============================================================
 updateMate = function()
     if not MateLabel then return end
     if not (G.gameActive and not G.gameOver) then MateLabel:SetText(""); return end
-    -- Only look for forced mate in endgames (cheap + where it actually matters).
-    -- In the opening/midgame it's both costly and almost never forced.
+
     if countPieces(G.board) > 10 then MateLabel:SetText(""); G.mate=0; return end
     if G.mate==nil then
-        -- antes esto corria entero aca y congelaba el juego; ahora se arma una
-        -- corrutina que aiTimer avanza de a poco. En el turno de la IA no hace
-        -- falta: la posicion cambia en cuanto juega.
+
         if not G.mateJob and not (G.aiMode and G.turn~=G.myColor) then
             local ctx=newCtx(G.board)
             local side,ep,cas=G.turn,epToSq(G.epTarget),casToMask(G.castling)
@@ -1213,9 +1097,6 @@ updateMate = function()
     end
 end
 
--- ============================================================
--- SIDE PANEL (turn / opponent / undo visibility)
--- ============================================================
 updateSidePanel = function()
     if OppLabel then
         if G.gameActive and not G.aiMode and G.opponent then
@@ -1233,9 +1114,6 @@ updateSidePanel = function()
     end
 end
 
--- ============================================================
--- UPDATE BOARD
--- ============================================================
 updateBoard = function()
     if not SquareBtns then return end
     for dr=1,8 do
@@ -1315,18 +1193,12 @@ clearBoardDisplay = function()
     if API.onUpdate then API.onUpdate() end
 end
 
--- ============================================================
--- MOVE ALERT (minimap flash + sound)
--- ============================================================
 local function alertMyTurn(fromName)
-    if API.Alert then API.Alert() end          -- flash + sound (the transition ping)
-    if API.onUpdate then API.onUpdate() end     -- refresh the persistent minimap border
+    if API.Alert then API.Alert() end
+    if API.onUpdate then API.onUpdate() end
     notify(format(L["N_YOUR_TURN_ALERT"], fromName or "?"))
 end
 
--- ============================================================
--- SQUARE CLICK
--- ============================================================
 local function onSquareClick(dr,dc)
     if not G.gameActive or G.gameOver then return end
     if G.turn~=G.myColor then return end
@@ -1348,8 +1220,7 @@ local function onSquareClick(dr,dc)
                     if wasPvP then
                         local sp=mv.sp or ""
                         local msg="MOVE:"..mv.fr..","..mv.fc..","..mv.tr..","..mv.tc..","..sp
-                        -- la pieza elegida va en un campo extra; versiones viejas lo
-                        -- ignoran y coronan a dama
+
                         if promoLetter then msg=msg..","..promoLetter end
                         SendAddonMessage(PREFIX,msg,"WHISPER",myGame.opponent)
                     end
@@ -1358,12 +1229,12 @@ local function onSquareClick(dr,dc)
                     if myGame==G then updateBoard() else updateTabs() end
                 end
                 if typ(G.board[mv.fr][mv.fc])=="P" and (mv.tr==8 or mv.tr==1) then
-                    -- coronacion: el jugador elige la pieza
+
                     G.selR=nil; G.selC=nil; G.validMoves={}
                     updateBoard()
                     local fromPiece=G.board[mv.fr][mv.fc]
                     showPromotion(G.myColor,function(letter)
-                        -- la partida pudo cambiar mientras el popup estaba abierto
+
                         if myGame.gameOver or myGame.turn~=myGame.myColor
                            or myGame.board[mv.fr][mv.fc]~=fromPiece then return end
                         play(letter)
@@ -1388,9 +1259,6 @@ local function onSquareClick(dr,dc)
     updateBoard()
 end
 
--- ============================================================
--- NEW GAME VS AI  (uses the current tab)
--- ============================================================
 local function newGameVsAI(myColor)
     hidePromotion()
     initBoard()
@@ -1404,9 +1272,6 @@ local function newGameVsAI(myColor)
     notify(format(L["N_NEW_AI"],"|cFF"..d.color..d.name.."|r", G.myColor=="w" and L["WHITE"] or L["BLACK"]))
 end
 
--- ============================================================
--- RESTART / RESIGN / ABANDON / UNDO
--- ============================================================
 local function doLocalRestart()
     local wasAI    = G.aiMode
     local myColor  = G.myColor
@@ -1425,7 +1290,7 @@ end
 local function restartGame()
     if not G.gameActive then notify(L["N_NO_ACTIVE"]); return end
     if not G.aiMode and G.opponent then
-        -- PvP: needs the opponent's agreement
+
         SendAddonMessage(PREFIX,"REQRESTART","WHISPER",G.opponent)
         notify(format(L["N_RESTART_REQ_SENT"],shortName(G.opponent)))
         return
@@ -1462,13 +1327,13 @@ end
 
 local function undoMove()
     local g=G
-    -- partida terminada: ya quedo en el historial, deshacer la duplicaria
+
     if not (g.aiMode and g.gameActive and not g.gameOver) then notify(L["N_NO_UNDO"]); return end
     if not g.undo or #g.undo==0 then notify(L["N_NO_UNDO"]); return end
     hidePromotion()
     local function restore()
         local s=table.remove(g.undo)
-        -- la posicion que se deja ya no cuenta para la repeticion
+
         if g.reps and g.posKey and g.reps[g.posKey] then
             g.reps[g.posKey]=g.reps[g.posKey]-1
             if g.reps[g.posKey]<=0 then g.reps[g.posKey]=nil end
@@ -1482,16 +1347,12 @@ local function undoMove()
     if g.turn~=g.myColor and #g.undo>0 then restore() end
     g.gameOver=false; g.winner=nil; g.drawReason=nil
     g.thinker=nil; g.selR=nil; g.selC=nil; g.validMoves={}; g.mate=nil; g.mateJob=nil
-    -- si jugas con negras y solo habia movido la IA, vuelve a ser su turno:
-    -- antes quedaba trabada (nadie podia mover)
+
     g.aiPending=(g.turn~=g.myColor)
     updateTabs(); updateDiffButtons()
     updateBoard(); saveAllGames(); notify(L["N_MOVE_UNDONE"])
 end
 
--- ============================================================
--- CHALLENGE HANDLING
--- ============================================================
 local function doAcceptChallenge()
     local ch=pendingChallenge
     if not ch then notify(L["N_NO_PENDING"]); return end
@@ -1523,9 +1384,6 @@ local function sendChallenge(target)
     notify(format(L["N_CHALLENGE_SENT"],shortName(target)))
 end
 
--- ============================================================
--- HISTORY WINDOW (aligned columns)
--- ============================================================
 local COLS = { x={6,34,110,190,326,388,446}, w={26,74,78,134,60,56,64} }
 
 local function makeCol(parent,idx,text,color,fontObj)
@@ -1608,7 +1466,6 @@ local function createHistoryFrame()
     f.statsText=f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
     f.statsText:SetPoint("TOPLEFT",14,-42); f.statsText:SetWidth(530); f.statsText:SetJustifyH("LEFT")
 
-    -- Column headers (same offsets as data rows -> aligned)
     local headerRow=CreateFrame("Frame",nil,f); headerRow:SetSize(500,18)
     headerRow:SetPoint("TOPLEFT",16,-76)
     local function hcol(idx,txt)
@@ -1640,9 +1497,6 @@ local function createHistoryFrame()
     f:Show()
 end
 
--- ============================================================
--- GENERIC CONFIRM POPUP (restart request / rematch)
--- ============================================================
 local function createConfirmPopup()
     if ConfirmPopup then return end
     local f=CreateFrame("Frame","ChessConfirmPopup",UIParent)
@@ -1691,9 +1545,6 @@ showRematchPopup = function(g)
         function() sendChallenge(opp) end, nil)
 end
 
--- ============================================================
--- PROMOTION PICKER (dama, torre, alfil o caballo)
--- ============================================================
 local PromoFrame=nil
 local PROMO_PIECES={"Q","R","B","N"}
 
@@ -1731,7 +1582,7 @@ showPromotion = function(color,onPick)
         local close=CreateFrame("Button",nil,f,"UIPanelCloseButton")
         close:SetSize(24,24); close:SetPoint("TOPRIGHT",6,6)
         close:SetScript("OnClick",function() hidePromotion() end)
-        -- clic derecho fuera de las piezas tambien cancela
+
         f:SetScript("OnMouseUp",function(self,btn) if btn=="RightButton" then hidePromotion() end end)
         PromoFrame=f
     end
@@ -1740,9 +1591,6 @@ showPromotion = function(color,onPick)
     PromoFrame:Show()
 end
 
--- ============================================================
--- CHALLENGE POPUP
--- ============================================================
 local function createChallengePopup()
     if ChallengePopup then return end
     local f=CreateFrame("Frame","ChessChallengePopup",UIParent)
@@ -1816,11 +1664,8 @@ local function showChallengePopup(challenger,busy)
     f:Show()
 end
 
--- ============================================================
--- ESCAPE CLOSE TOGGLE
--- ============================================================
 local function applyEscClose()
-    -- remove any existing entry
+
     for i=#UISpecialFrames,1,-1 do
         if UISpecialFrames[i]=="ChessMainFrame" then table.remove(UISpecialFrames,i) end
     end
@@ -1829,15 +1674,12 @@ local function applyEscClose()
     end
 end
 
--- ============================================================
--- MAIN UI
--- ============================================================
 local function createUI()
     local boardPx=SQ*8; local labelSz=18
     local panelW=195
     local TABH=TAB_H
     local frameW=labelSz+boardPx+panelW+30
-    local frameH=boardPx+labelSz+62+TABH   -- close to the original height
+    local frameH=boardPx+labelSz+62+TABH
 
     ChessFrame=CreateFrame("Frame","ChessMainFrame",UIParent)
     ChessFrame:SetSize(frameW,frameH); ChessFrame:SetPoint("CENTER")
@@ -1860,7 +1702,6 @@ local function createUI()
     closeBtn:SetPoint("TOPRIGHT",-3,-3)
     closeBtn:SetScript("OnClick",function() ChessFrame:Hide(); if HistoryFrame then HistoryFrame:Hide() end end)
 
-    -- --- Tab strip (Chrome style) ---
     local tabStrip=CreateFrame("Frame",nil,ChessFrame)
     tabStrip:SetSize(boardPx,TABH); tabStrip:SetPoint("TOPLEFT",labelSz+14,-30)
     for i=1,MAX_GAMES do
@@ -1887,7 +1728,6 @@ local function createUI()
     PlusBtn:SetScript("OnEnter",function(s) GameTooltip:SetOwner(s,"ANCHOR_RIGHT"); GameTooltip:AddLine(L["TAB_NEW_TT"],1,1,1); GameTooltip:Show() end)
     PlusBtn:SetScript("OnLeave",function() GameTooltip:Hide() end)
 
-    -- --- Board ---
     local boardTop=30+TABH+2
     local boardFrame=CreateFrame("Frame",nil,ChessFrame)
     boardFrame:SetSize(boardPx,boardPx); boardFrame:SetPoint("TOPLEFT",labelSz+14,-boardTop)
@@ -1924,12 +1764,10 @@ local function createUI()
         lbl:SetJustifyH("RIGHT"); lbl:SetJustifyV("MIDDLE"); lbl:SetText("|cFFBBAA88"..(9-dr).."|r")
     end
 
-    -- Floating notice over the board bottom (no extra window height)
     NoticeLabel=boardFrame:CreateFontString(nil,"OVERLAY","GameFontNormal")
     NoticeLabel:SetPoint("BOTTOM",boardFrame,"BOTTOM",0,6); NoticeLabel:SetWidth(boardPx-10)
     NoticeLabel:SetJustifyH("CENTER"); NoticeLabel:SetText("")
 
-    -- --- Side panel ---
     local px=labelSz+boardPx+20
     local function Y(y) return y end
 
@@ -2034,15 +1872,11 @@ local function createUI()
     EscCheck:SetScript("OnEnter",function(self) GameTooltip:SetOwner(self,"ANCHOR_RIGHT"); GameTooltip:AddLine(L["ESC_CLOSE"],1,1,1); GameTooltip:AddLine(L["ESC_TOOLTIP"],0.8,0.8,0.8,true); GameTooltip:Show() end)
     EscCheck:SetScript("OnLeave",function() GameTooltip:Hide() end)
 
-    -- AI timer: the search runs inside a coroutine that is resumed one small
-    -- time-slice per frame, so the game keeps drawing while the AI thinks
-    -- (no more freeze). No ping/flash for AI moves (board is on screen).
     local function aiFallback(g)
         local ms=allLegalMoves(g.board,opp(g.myColor),g.epTarget,g.castling)
         return (#ms>0) and ms[math.random(#ms)] or nil
     end
-    -- Presupuesto por frame: ~35% del tiempo de un frame (entre 3 y 8 ms),
-    -- asi a 60 FPS la IA usa ~6 ms y a 30 FPS no se come el frame entero.
+
     local function startSlice()
         local fps=GetFramerate and GetFramerate() or 60
         if not fps or fps<1 then fps=60 end
@@ -2056,7 +1890,7 @@ local function createUI()
         local g=G
         if not (g.aiPending and g.aiMode and g.gameActive and not g.gameOver) then
             self.elapsed=0
-            -- sin IA pensando: avanzar el calculo del "mate en N" (solo con el tablero a la vista)
+
             local job=g.mateJob
             if job and ChessFrame and ChessFrame:IsShown() then
                 startSlice()
@@ -2070,7 +1904,7 @@ local function createUI()
             return
         end
         if not g.thinker then
-            -- short "thinking" delay for feel, then spawn the search
+
             self.elapsed=self.elapsed+dt
             local waitTime=(g.diff>=4) and 0.15 or 0.45
             if self.elapsed>=waitTime then
@@ -2079,15 +1913,15 @@ local function createUI()
             end
             return
         end
-        -- resume the search for one slice, then let the frame render
+
         startSlice()
         local th=g.thinker
         local ok,res=coroutine.resume(th)
-        -- si deshacer/reiniciar descarto esta busqueda mientras corria, ignorarla
+
         if g.thinker~=th then return end
         if not ok or coroutine.status(th)=="dead" then
             local mv = ok and res or nil
-            -- mostrar el error en vez de tragarlo (se juega igual una al azar)
+
             if not ok and geterrorhandler then geterrorhandler()(res) end
             g.thinker=nil; g.aiPending=false
             if not mv then mv=aiFallback(g) end
@@ -2095,7 +1929,6 @@ local function createUI()
         end
     end)
 
-    -- Clock / notice fade / periodic save
     local clockTimer=CreateFrame("Frame"); clockTimer.elapsed=0
     clockTimer:SetScript("OnUpdate",function(self,dt)
         self.elapsed=self.elapsed+dt
@@ -2118,12 +1951,6 @@ local function createUI()
         end
     end)
 
-    -- Arena "gates open" detection.
-    -- The board is hidden the moment the match STARTS (gates open), never on
-    -- entering the arena. Two independent signals are used for reliability:
-    --   1) the "Arena Preparation" aura disappearing (matched by icon AND by
-    --      EN/ES name, so it works whatever the client language), and
-    --   2) the "The Arena battle has begun!" system message.
     local function hasPrepAura()
         for i=1,40 do
             local name,_,icon = UnitBuff("player", i)
@@ -2146,7 +1973,7 @@ local function createUI()
         self.t=0
         local prep=hasPrepAura()
         if self.hadPrep and not prep then
-            API._gatesOpen()   -- prep aura removed -> gates just opened
+            API._gatesOpen()
             self:Hide()
         end
         self.hadPrep=prep
@@ -2157,17 +1984,14 @@ local function createUI()
     API._stopArenaWatch=function() arenaWatch:Hide() end
 
     ChessFrame:Hide()
-    clearBoardDisplay()   -- draw empty board immediately
+    clearBoardDisplay()
 end
 
--- ============================================================
--- SHARED API FOR MINIMAP
--- ============================================================
 API.GetState = function()
     return { active=G.gameActive and not G.gameOver, myTurn=(G.turn==G.myColor),
              aiMode=G.aiMode, opponent=shortName(G.opponent) }
 end
--- True while it's your move in any open PvP game (drives the minimap border).
+
 API.PendingPvPTurn = function()
     for i=1,openTabs do
         local g=games[i]
@@ -2183,9 +2007,6 @@ API.ToggleBoard = function()
 end
 API.ShowBoard = function() if ChessFrame then ChessFrame:Show() end end
 
--- ============================================================
--- EVENTS
--- ============================================================
 local eventFrame=CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
@@ -2217,7 +2038,7 @@ eventFrame:SetScript("OnEvent",function(self,event,a1,a2,a3,a4)
             openTabs = DB.openTabs or 1
             if openTabs<1 then openTabs=1 end
             if openTabs>MAX_GAMES then openTabs=MAX_GAMES end
-            -- make sure every restored game has a visible tab
+
             for i=1,MAX_GAMES do
                 if games[i] and games[i].gameActive and i>openTabs then openTabs=i end
             end
@@ -2237,13 +2058,13 @@ eventFrame:SetScript("OnEvent",function(self,event,a1,a2,a3,a4)
     elseif event=="PLAYER_ENTERING_WORLD" then
         local _, instanceType = IsInInstance()
         if instanceType=="arena" then
-            if API._startArenaWatch then API._startArenaWatch() end   -- arm the gates-open watch
+            if API._startArenaWatch then API._startArenaWatch() end
         else
             if API._stopArenaWatch then API._stopArenaWatch() end
         end
 
     elseif event=="CHAT_MSG_BG_SYSTEM_NEUTRAL" then
-        -- Second, independent "gates open" signal: the battle-begins message.
+
         local _, instanceType = IsInInstance()
         if instanceType=="arena" then
             local m=string.lower(a1 or "")
@@ -2313,15 +2134,14 @@ eventFrame:SetScript("OnEvent",function(self,event,a1,a2,a3,a4)
         elseif msg:sub(1,5)=="MOVE:" then
             local fr,fc,tr,tc,rest=msg:match("^MOVE:(%d+),(%d+),(%d+),(%d+),(.*)$")
             fr,fc,tr,tc=tonumber(fr),tonumber(fc),tonumber(tr),tonumber(tc)
-            -- campo extra opcional con la pieza de coronacion (Q/R/B/N)
+
             local promoLetter=rest and rest:match(",([QRBN])$")
             if fr and fc and tr and tc then
                 for i=1,MAX_GAMES do
                     local g=games[i]
                     if g and g.gameActive and not g.gameOver and not g.aiMode
                        and shortName(g.opponent)==sName and g.turn~=g.myColor then
-                        -- solo se acepta si es legal aca; el tipo especial (enroque,
-                        -- al paso) se toma de nuestra generacion, no del mensaje
+
                         local mv=nil
                         if inb(fr,fc) and inb(tr,tc) and g.board[fr][fc] and col(g.board[fr][fc])==g.turn then
                             for _,m in ipairs(legalMoves(g.board,fr,fc,g.epTarget,g.castling)) do
@@ -2361,9 +2181,6 @@ eventFrame:SetScript("OnEvent",function(self,event,a1,a2,a3,a4)
     end
 end)
 
--- ============================================================
--- SLASH COMMANDS
--- ============================================================
 local function slashCmd(msg)
     msg=(msg or ""):lower():gsub("^%s+",""):gsub("%s+$","")
     if msg=="" or msg=="open" or msg=="abrir" then

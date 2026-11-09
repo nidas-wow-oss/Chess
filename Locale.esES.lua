@@ -1,19 +1,11 @@
--- ============================================================
--- Locale.esES.lua  -  Spanish translation (esES / esMX)
--- Only overrides the base English strings when the WoW client
--- is running in Spanish. Otherwise this file does nothing.
--- ============================================================
-
 local loc = GetLocale()
 if loc ~= "esES" and loc ~= "esMX" then return end
 
 local L = ChessLocale
 if not L then return end
 
--- ---- Generico ----------------------------------------------
 L["TITLE"]            = "Ajedrez WoW"
 
--- ---- Tablero / estado --------------------------------------
 L["NO_ACTIVE_GAME"]   = "Sin partida activa"
 L["CHOOSE_MODE"]      = "Elige un modo de juego"
 L["WHITE"]            = "Blancas"
@@ -31,7 +23,6 @@ L["DRAW_MATERIAL"]    = "\194\161Tablas!\nMaterial insuficiente"
 L["TIME"]             = "Tiempo: %s"
 L["TIME_NONE"]        = "Tiempo: --:--"
 
--- ---- Dificultad --------------------------------------------
 L["DIFF_TITLE"]       = "Dificultad de IA:"
 L["DIFF_NOVICE"]      = "Novato"
 L["DIFF_EASY"]        = "F\195\161cil"
@@ -45,7 +36,6 @@ L["DIFF_HARD_DESC"]   = "Minimax 2 jugadas"
 L["DIFF_EXPERT_DESC"] = "Minimax 3 jugadas + quiescence"
 L["DIFF_DEPTH"]       = "Profundidad: %d jugadas"
 
--- ---- Botones del panel -------------------------------------
 L["BTN_NEW_WHITE"]    = "Nueva (Blancas) vs IA"
 L["BTN_NEW_BLACK"]    = "Nueva (Negras) vs IA"
 L["BTN_CHALLENGE"]    = "Retar objetivo"
@@ -54,13 +44,11 @@ L["BTN_RESIGN"]       = "Rendirse"
 L["BTN_ABANDON"]      = "Abandonar partida"
 L["BTN_HISTORY"]      = "Historial"
 
--- ---- Pesta\195\177as ---------------------------------------
 L["TAB_EMPTY"]        = "Vac\195\173a"
 L["TAB_VS_AI"]        = "vs IA"
 L["TAB_NEW_TT"]       = "Abrir una nueva partida"
 L["TAB_CLOSE_TT"]     = "Cerrar esta pesta\195\177a"
 
--- ---- Oponente / mate / deshacer ----------------------------
 L["VS_PLAYER"]        = "vs %s"
 L["MATE_YOU"]         = "Puedes dar mate en %d"
 L["MATE_OPP"]         = "El rival da mate en %d"
@@ -69,34 +57,27 @@ L["BTN_UNDO"]         = "Deshacer jugada"
 L["N_MOVE_UNDONE"]    = "Jugada deshecha."
 L["N_NO_UNDO"]        = "Nada que deshacer."
 
--- ---- Checkbox de Escape ------------------------------------
 L["ESC_CLOSE"]        = "Cerrar con Escape"
 L["ESC_TOOLTIP"]      = "Permite abrir y cerrar el tablero con la tecla Escape."
 
--- ---- Reinicio consensuado (PvP) ----------------------------
 L["N_RESTART_REQ_SENT"] = "Solicitud de reinicio enviada a %s."
 L["POPUP_RESTART_TITLE"]= "-=[ Solicitud de Reinicio ]=-"
 L["POPUP_RESTART_MSG"]  = "|cFF00CCFF%s|r quiere\nreiniciar la partida"
 L["N_RESTART_DECLINED"] = "%s rechaz\195\179 el reinicio."
 L["N_RESTART_AGREED"]   = "\194\161Reinicio acordado! Nueva partida."
 
--- ---- Revancha ----------------------------------------------
 L["POPUP_REMATCH_TITLE"]= "-=[ Fin de la Partida ]=-"
 L["POPUP_REMATCH_MSG"]  = "\194\191Jugar otra vs |cFF00CCFF%s|r?"
 L["POPUP_YES"]          = "S\195\173"
 L["POPUP_NO"]           = "No"
 
--- ---- Alerta de movimiento ----------------------------------
 L["N_YOUR_TURN_ALERT"]  = "Tu turno - %s movi\195\179."
 
--- ---- Auto-minimizar en arena -------------------------------
 L["ARENA_MINIMIZE"]   = "Auto-minimizar en arena"
 L["ARENA_TOOLTIP"]    = "Oculta el tablero autom\195\161ticamente al entrar en una arena."
 
--- ---- Leyenda -----------------------------------------------
 L["LEGEND"]           = "|cFF00FF00>> Selecci\195\179n  |cFF3355FFMov. libre|r\n|cFFFF3322Captura/Jaque  |cFFCCCC00\195\154lt. mov.|r"
 
--- ---- Notificaciones (en la ventana del addon, no en el chat) --
 L["N_SELECT_PLAYER"]  = "Selecciona un jugador primero."
 L["N_NO_SELF"]        = "No puedes retarte a ti mismo."
 L["N_CHALLENGE_SENT"] = "Reto enviado a %s."
@@ -125,7 +106,6 @@ L["N_OPP_MOVED"]      = "%s movi\195\179 en tu otra partida."
 L["N_GAME_LOADED"]    = "Partida anterior restaurada. Escribe /chess para continuar."
 L["N_UNKNOWN_CMD"]    = "Comando desconocido. Escribe /chess help"
 
--- ---- Ventana de reto ---------------------------------------
 L["POPUP_TITLE"]      = "-=[ Reto de Ajedrez ]=-"
 L["POPUP_ACCEPT"]     = "Aceptar"
 L["POPUP_DECLINE"]    = "Declinar"
@@ -133,7 +113,6 @@ L["POPUP_EXPIRES"]    = "Expira en %d seg"
 L["POPUP_MSG"]        = "|cFF00CCFF%s|r\nte reta a una partida de ajedrez"
 L["POPUP_BUSY"]       = "|cFF00CCFF%s|r te reta a ajedrez\n|cFFFF4444No tienes pesta\195\177as libres.|r\nTermina una para aceptar."
 
--- ---- Ventana de historial ----------------------------------
 L["HIST_TITLE"]       = "Historial de Partidas"
 L["HIST_STATS"]       = "|cFF00FF00Victorias: %d|r    |cFFFF4444Derrotas: %d|r    |cFFAAAAAAEmpates: %d|r\n|cFFFFD700Tiempo total jugado: %s|r"
 L["HDR_NUM"]          = "#"
@@ -153,7 +132,6 @@ L["HIST_VS_AI"]       = "vs IA"
 L["HIST_PVP"]         = "PvP"
 L["HIST_AI_OPP"]      = "IA - %s"
 
--- ---- Bot\195\179n del minimapa -----------------------------
 L["MM_TITLE"]         = "Ajedrez WoW"
 L["MM_LEFT"]          = "|cFFFFFFFFClic izquierdo:|r Abrir/cerrar tablero"
 L["MM_RIGHT"]         = "|cFFFFFFFFClic derecho:|r Abrir tablero"
@@ -163,7 +141,6 @@ L["MM_YOUR_TURN"]     = "Tu turno"
 L["MM_OPP_TURN"]      = "Turno del oponente"
 L["MM_NO_GAME"]       = "Sin partida activa"
 
--- ---- /chess help (lo \195\186nico que se imprime en el chat) --
 L["HELP_HEADER"]      = "====== Ajedrez WoW - Comandos ======"
 L["HELP_OPEN"]        = "/chess          - Abrir/cerrar tablero"
 L["HELP_ACCEPT"]      = "/chess accept   - Aceptar un reto"

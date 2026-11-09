@@ -1,18 +1,9 @@
--- ============================================================
--- Locale.enUS.lua  -  Base / default locale (always loaded)
--- English strings for the Chess addon.
--- Missing keys fall back to the key itself (see metatable below),
--- so the UI never breaks even if a translation is absent.
--- ============================================================
-
 local L = {}
 ChessLocale = L
 setmetatable(L, { __index = function(_, k) return k end })
 
--- ---- Generic ------------------------------------------------
 L["TITLE"]            = "Chess WoW"
 
--- ---- Board / status ----------------------------------------
 L["NO_ACTIVE_GAME"]   = "No active game"
 L["CHOOSE_MODE"]      = "Choose a game mode"
 L["WHITE"]            = "White"
@@ -30,7 +21,6 @@ L["DRAW_MATERIAL"]    = "Draw!\nInsufficient material"
 L["TIME"]             = "Time: %s"
 L["TIME_NONE"]        = "Time: --:--"
 
--- ---- Difficulty --------------------------------------------
 L["DIFF_TITLE"]       = "AI Difficulty:"
 L["DIFF_NOVICE"]      = "Novice"
 L["DIFF_EASY"]        = "Easy"
@@ -44,7 +34,6 @@ L["DIFF_HARD_DESC"]   = "Minimax 2 plies"
 L["DIFF_EXPERT_DESC"] = "Minimax 3 plies + quiescence"
 L["DIFF_DEPTH"]       = "Depth: %d plies"
 
--- ---- Side panel buttons ------------------------------------
 L["BTN_NEW_WHITE"]    = "New (White) vs AI"
 L["BTN_NEW_BLACK"]    = "New (Black) vs AI"
 L["BTN_CHALLENGE"]    = "Challenge target"
@@ -53,13 +42,11 @@ L["BTN_RESIGN"]       = "Resign"
 L["BTN_ABANDON"]      = "Abandon game"
 L["BTN_HISTORY"]      = "History"
 
--- ---- Tabs --------------------------------------------------
 L["TAB_EMPTY"]        = "Empty"
 L["TAB_VS_AI"]        = "vs AI"
 L["TAB_NEW_TT"]       = "Open a new game"
 L["TAB_CLOSE_TT"]     = "Close this tab"
 
--- ---- Opponent / mate / undo --------------------------------
 L["VS_PLAYER"]        = "vs %s"
 L["MATE_YOU"]         = "You can mate in %d"
 L["MATE_OPP"]         = "Opponent mates in %d"
@@ -68,34 +55,27 @@ L["BTN_UNDO"]         = "Undo move"
 L["N_MOVE_UNDONE"]    = "Move undone."
 L["N_NO_UNDO"]        = "Nothing to undo."
 
--- ---- Escape checkbox ---------------------------------------
 L["ESC_CLOSE"]        = "Close with Escape"
 L["ESC_TOOLTIP"]      = "Lets you open and close the board with the Escape key."
 
--- ---- Restart agreement (PvP) -------------------------------
 L["N_RESTART_REQ_SENT"] = "Restart request sent to %s."
 L["POPUP_RESTART_TITLE"]= "-=[ Restart Request ]=-"
 L["POPUP_RESTART_MSG"]  = "|cFF00CCFF%s|r wants to\nrestart the game"
 L["N_RESTART_DECLINED"] = "%s declined the restart."
 L["N_RESTART_AGREED"]   = "Restart agreed. New game!"
 
--- ---- Rematch ------------------------------------------------
 L["POPUP_REMATCH_TITLE"]= "-=[ Game Over ]=-"
 L["POPUP_REMATCH_MSG"]  = "Play again vs |cFF00CCFF%s|r?"
 L["POPUP_YES"]          = "Yes"
 L["POPUP_NO"]           = "No"
 
--- ---- Move alert --------------------------------------------
 L["N_YOUR_TURN_ALERT"]  = "Your turn - %s moved."
 
--- ---- Arena auto-minimize -----------------------------------
 L["ARENA_MINIMIZE"]   = "Auto-minimize in arena"
 L["ARENA_TOOLTIP"]    = "Hides the board automatically when you enter an arena."
 
--- ---- Legend ------------------------------------------------
 L["LEGEND"]           = "|cFF00FF00>> Selection  |cFF3355FFFree move|r\n|cFFFF3322Capture/Check  |cFFCCCC00Last move|r"
 
--- ---- Notifications (shown in the addon window, not chat) ----
 L["N_SELECT_PLAYER"]  = "Select a player first."
 L["N_NO_SELF"]        = "You can't challenge yourself."
 L["N_CHALLENGE_SENT"] = "Challenge sent to %s."
@@ -124,7 +104,6 @@ L["N_OPP_MOVED"]      = "%s moved in your other game."
 L["N_GAME_LOADED"]    = "Previous game restored. Type /chess to continue."
 L["N_UNKNOWN_CMD"]    = "Unknown command. Type /chess help"
 
--- ---- Challenge popup ---------------------------------------
 L["POPUP_TITLE"]      = "-=[ Chess Challenge ]=-"
 L["POPUP_ACCEPT"]     = "Accept"
 L["POPUP_DECLINE"]    = "Decline"
@@ -132,7 +111,6 @@ L["POPUP_EXPIRES"]    = "Expires in %d s"
 L["POPUP_MSG"]        = "|cFF00CCFF%s|r\nchallenges you to a game of chess"
 L["POPUP_BUSY"]       = "|cFF00CCFF%s|r challenges you to chess\n|cFFFF4444You have no free game slots.|r\nFinish one to accept."
 
--- ---- History window ----------------------------------------
 L["HIST_TITLE"]       = "Game History"
 L["HIST_STATS"]       = "|cFF00FF00Wins: %d|r    |cFFFF4444Losses: %d|r    |cFFAAAAAADraws: %d|r\n|cFFFFD700Total time played: %s|r"
 L["HDR_NUM"]          = "#"
@@ -152,7 +130,6 @@ L["HIST_VS_AI"]       = "vs AI"
 L["HIST_PVP"]         = "PvP"
 L["HIST_AI_OPP"]      = "AI - %s"
 
--- ---- Minimap button ----------------------------------------
 L["MM_TITLE"]         = "Chess WoW"
 L["MM_LEFT"]          = "|cFFFFFFFFLeft click:|r Toggle board"
 L["MM_RIGHT"]         = "|cFFFFFFFFRight click:|r Open board"
@@ -162,7 +139,6 @@ L["MM_YOUR_TURN"]     = "Your turn"
 L["MM_OPP_TURN"]      = "Opponent's turn"
 L["MM_NO_GAME"]       = "No active game"
 
--- ---- /chess help (the only text still printed to chat) ------
 L["HELP_HEADER"]      = "====== Chess WoW - Commands ======"
 L["HELP_OPEN"]        = "/chess          - Toggle the board"
 L["HELP_ACCEPT"]      = "/chess accept   - Accept a challenge"
